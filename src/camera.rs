@@ -1,4 +1,4 @@
-use crate::effect::TripEffect;
+use crate::effect::{TimeSlowEffect, TripEffect};
 use macroquad::prelude::*;
 
 pub const MAX_LOOK_OFFSET: f32 = 300.0;
@@ -16,11 +16,17 @@ pub struct CameraManager {
     pub story_effect_active: bool,
     pub story_effect_timer: f32,
     pub trip_effect: TripEffect,
+    pub time_slow: TimeSlowEffect,
+
+    scene_target: RenderTarget,
 }
 
 impl CameraManager {
     pub fn new() -> Self {
         let camera = Camera2D::default();
+
+        let scene_target = render_target(screen_width() as u32, screen_height() as u32);
+        scene_target.texture.set_filter(FilterMode::Nearest);
 
         Self {
             camera,
@@ -31,6 +37,8 @@ impl CameraManager {
             story_effect_active: false,
             story_effect_timer: 0.0,
             trip_effect: TripEffect::new(),
+            time_slow: TimeSlowEffect::new(),
+            scene_target,
         }
     }
 
@@ -46,7 +54,22 @@ impl CameraManager {
         self.set_story_effect(!self.story_effect_active);
     }
 
-    pub fn update(&mut self, player_pos: Vec2, aim_world_pos: Vec2, look_around: bool, dt: f32) {
+    pub fn set_time_slow_active(&mut self, active: bool) {
+        self.time_slow.set_active(active);
+    }
+
+    pub fn update_time_slow(&mut self, real_dt: f32) {
+        self.time_slow.update(real_dt);
+    }
+
+    pub fn update(
+        &mut self,
+        player_pos: Vec2,
+        aim_world_pos: Vec2,
+        look_around: bool,
+        dt: f32,
+        real_dt: f32,
+    ) {
         let desired_target = if look_around {
             let offset = aim_world_pos - player_pos;
             let clamped_offset = vec2(
@@ -81,14 +104,33 @@ impl CameraManager {
         }
 
         self.trip_effect.update(dt);
+        self.time_slow.update(real_dt);
+        self.sync_scene_target();
 
         self.camera.zoom = vec2(2.4 / screen_width(), 2.4 / screen_height());
         self.camera.target = self.target_pos + shake_offset;
     }
 
+    fn sync_scene_target(&mut self) {
+        let w = screen_width() as u32;
+        let h = screen_height() as u32;
+        if self.scene_target.texture.width() as u32 != w
+            || self.scene_target.texture.height() as u32 != h
+        {
+            self.scene_target = render_target(w, h);
+            self.scene_target.texture.set_filter(FilterMode::Nearest);
+        }
+    }
+
+    fn post_active(&self) -> bool {
+        self.trip_effect.intensity > 0.0 || self.time_slow.is_active()
+    }
+
     pub fn begin_render(&mut self) {
-        if self.trip_effect.intensity > 0.0 {
-            self.camera.render_target = Some(self.trip_effect.scene_target.clone());
+        self.sync_scene_target();
+
+        if self.post_active() {
+            self.camera.render_target = Some(self.scene_target.clone());
         } else {
             self.camera.render_target = None;
         }
@@ -100,8 +142,31 @@ impl CameraManager {
     pub fn end_render(&mut self) {
         set_default_camera();
 
+        if !self.post_active() {
+            self.camera.render_target = None;
+            return;
+        }
+
+        let mut source = self.scene_target.texture.clone();
+
+        if self.time_slow.is_active() {
+            self.time_slow.process(&source);
+            source = self.time_slow.out_texture();
+        }
+
         if self.trip_effect.intensity > 0.0 {
-            self.trip_effect.render_to_screen();
+            self.trip_effect.render_to_screen(&source);
+        } else {
+            draw_texture_ex(
+                &source,
+                0.0,
+                0.0,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(screen_width(), screen_height())),
+                    ..Default::default()
+                },
+            );
         }
 
         self.camera.render_target = None;

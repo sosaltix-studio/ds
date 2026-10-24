@@ -85,6 +85,7 @@ pub struct GameInput {
     pub pause_pressed: bool,
     pub look_around: bool,
     pub restart_pressed: bool,
+    pub ability_pressed: bool,
     pub debug_toggle_effect: bool,
 }
 
@@ -115,11 +116,10 @@ fn collect_pc_input(camera: &Camera2D) -> GameInput {
         move_dir,
         raw_aim_world_pos,
         aim_world_pos: raw_aim_world_pos,
-        attack_pressed: is_mouse_button_pressed(MouseButton::Left)
-            || is_key_pressed(KeyCode::Enter),
+        attack_pressed: is_mouse_button_pressed(MouseButton::Left),
         attack_held: is_mouse_button_down(MouseButton::Left),
         action_pick_drop: is_mouse_button_pressed(MouseButton::Right),
-        execute_pressed: is_key_pressed(KeyCode::Space),
+        execute_pressed: is_key_pressed(KeyCode::E),
         toggle_lock_on: is_mouse_button_pressed(MouseButton::Middle),
         menu_up: is_key_pressed(KeyCode::Up),
         menu_down: is_key_pressed(KeyCode::Down),
@@ -128,6 +128,7 @@ fn collect_pc_input(camera: &Camera2D) -> GameInput {
         pause_pressed: is_key_pressed(KeyCode::Escape),
         look_around: is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
         restart_pressed: is_key_pressed(KeyCode::R),
+        ability_pressed: is_key_down(KeyCode::Space),
         debug_toggle_effect: is_key_pressed(KeyCode::T),
     }
 }

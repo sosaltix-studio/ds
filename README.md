@@ -1,4 +1,4 @@
-# Dolbaeb simulator
+# DS
 
 Проект написан на Rust с ипользованием графического движка Macroquad
 
@@ -8,9 +8,9 @@
 ### Установка и запуск
 
    ```bash
-   git clone https://github.com/sosaltix-studio/dolbaeb-simulator
+   git clone https://github.com/sosaltix-studio/ds
 
-   cd dolbaeb-simulator
+   cd ds
    
    cargo run --release
    ```
@@ -18,9 +18,9 @@
 ### Запуск в браузере
 
    ```bash
-   git clone https://github.com/sosaltix-studio/dolbaeb-simulator
+   git clone https://github.com/sosaltix-studio/ds
 
-   cd dolbaeb-simulator
+   cd ds
 
    rustup target add wasm32-unknown-unknown
 

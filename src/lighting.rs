@@ -10,6 +10,10 @@ const BULLET_LIGHT_RADIUS: f32 = 50.0;
 const BULLET_LIGHT_INTENSITY: f32 = 0.5;
 const BULLET_LIGHT_COLOR: Color = Color::new(1.0, 0.85, 0.4, 1.0);
 
+// Холодная палитра освещения на время замедления
+const SLOW_AMBIENT_COLOR: Color = Color::new(0.09, 0.12, 0.24, 1.0);
+const SLOW_PLAYER_LIGHT_COLOR: Color = Color::new(0.62, 0.85, 1.0, 1.0);
+
 pub const MAP_STATIC_LIGHT_COLOR: Color = Color::new(1.0, 0.92, 0.78, 1.0);
 pub const MAP_STATIC_LIGHT_RADIUS: f32 = 500.0;
 pub const MAP_STATIC_LIGHT_INTENSITY: f32 = 1.0;
@@ -147,6 +151,7 @@ impl LightingManager {
         static_lights: &[Light],
         player_pos: Vec2,
         bullets: &[Bullet],
+        slow_intensity: f32,
     ) {
         if !self.enabled {
             return;
@@ -158,14 +163,18 @@ impl LightingManager {
         let time = get_time() as f32;
 
         set_camera(&self.light_map_camera());
-        clear_background(self.ambient_color);
+        clear_background(lerp_color(
+            self.ambient_color,
+            SLOW_AMBIENT_COLOR,
+            slow_intensity,
+        ));
 
         for light in static_lights {
             self.draw_light(&view, *light, time);
         }
-        self.draw_light(&view, player_light(player_pos), time);
+        self.draw_light(&view, player_light(player_pos, slow_intensity), time);
         for bullet in bullets {
-            self.draw_light(&view, bullet_light(bullet), time);
+            self.draw_light(&view, bullet_light(bullet, slow_intensity), time);
         }
 
         set_default_camera();
@@ -230,23 +239,33 @@ impl LightingManager {
     }
 }
 
-fn player_light(pos: Vec2) -> Light {
+fn player_light(pos: Vec2, slow_intensity: f32) -> Light {
     lamp(
         pos,
-        PLAYER_LIGHT_RADIUS,
-        PLAYER_LIGHT_COLOR,
+        PLAYER_LIGHT_RADIUS * (1.0 + 0.15 * slow_intensity),
+        lerp_color(PLAYER_LIGHT_COLOR, SLOW_PLAYER_LIGHT_COLOR, slow_intensity),
         PLAYER_LIGHT_INTENSITY,
         0.0,
     )
 }
 
-fn bullet_light(bullet: &Bullet) -> Light {
+fn bullet_light(bullet: &Bullet, slow_intensity: f32) -> Light {
     lamp(
         bullet.pos,
-        BULLET_LIGHT_RADIUS,
+        BULLET_LIGHT_RADIUS * (1.0 + 0.5 * slow_intensity),
         BULLET_LIGHT_COLOR,
-        BULLET_LIGHT_INTENSITY,
+        BULLET_LIGHT_INTENSITY * (1.0 + 0.3 * slow_intensity),
         0.0,
+    )
+}
+
+fn lerp_color(from: Color, to: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    Color::new(
+        from.r + (to.r - from.r) * t,
+        from.g + (to.g - from.g) * t,
+        from.b + (to.b - from.b) * t,
+        from.a + (to.a - from.a) * t,
     )
 }
 

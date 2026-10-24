@@ -12,10 +12,10 @@ pub struct Assets {
 impl Assets {
     pub async fn load() -> Self {
         // Загрузка текстур
-        let player_bytes = include_bytes!("../assets/player_tileset.png");
-        let enemy_bytes = include_bytes!("../assets/enemy_mechanic.png");
-        let weapons_bytes = include_bytes!("../assets/weapons.png");
-        let cursor_bytes = include_bytes!("../assets/cursor.png");
+        let player_bytes = include_bytes!("../assets/textures/player_tileset.png");
+        let enemy_bytes = include_bytes!("../assets/textures/enemy_mechanic.png");
+        let weapons_bytes = include_bytes!("../assets/textures/weapons.png");
+        let cursor_bytes = include_bytes!("../assets/textures/cursor.png");
 
         let player = Texture2D::from_file_with_format(player_bytes, None);
         let enemy = Texture2D::from_file_with_format(enemy_bytes, None);
@@ -24,7 +24,7 @@ impl Assets {
 
         next_frame().await;
 
-        let font_bytes = include_bytes!("../assets/zinux.ttf");
+        let font_bytes = include_bytes!("../assets/font/zinux.ttf");
         let font = load_ttf_font_from_bytes(font_bytes).unwrap();
 
         // Отключение размытия для пиксель арта

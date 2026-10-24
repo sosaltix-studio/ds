@@ -344,6 +344,21 @@ pub fn draw_ui(assets: &Assets, player: &Player) {
     }
 }
 
+pub fn draw_time_slow_hud(assets: &Assets, player: &Player) {
+    set_default_camera();
+
+    let text = format!("{:.0}", player.ability_charge);
+
+    draw_ui_text(
+        &assets.font,
+        &text,
+        40.0,
+        screen_height() - 50.0,
+        28,
+        Color::new(0.6, 0.85, 1.0, 1.0),
+    );
+}
+
 pub fn draw_pause_menu(assets: &Assets, selected_idx: usize) {
     set_default_camera();
 

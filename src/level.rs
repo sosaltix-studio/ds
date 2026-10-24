@@ -1,3 +1,4 @@
+use crate::blood::BloodManager;
 use crate::enemy::Enemy;
 use crate::objects::{Bullet, DroppedWeapon, Weapon};
 use crate::player::Player;
@@ -48,9 +49,10 @@ impl Level {
                     0.0,
                 )],
                 exit_trigger: Rect::new(750.0, 100.0, 80.0, 80.0),
-                next_map: Some(MapId::Level1_2),
+                next_map: Some(MapId::House),
                 next_player_pos: vec2(91.0, 91.0),
             },
+            /*
             MapId::Level1_2 => Level {
                 map_id: MapId::Level1_2,
                 player_start: vec2(88.0, 528.0),
@@ -93,6 +95,7 @@ impl Level {
                 next_map: None,
                 next_player_pos: vec2(0.0, 0.0),
             },
+            */
         }
     }
 }
@@ -104,6 +107,7 @@ pub fn handle_location_switch(
     enemies: &mut Vec<Enemy>,
     dropped_weapons: &mut Vec<DroppedWeapon>,
     bullets: &mut Vec<Bullet>,
+    blood_pools: &mut BloodManager,
 ) {
     if current_level.exit_trigger.contains(player.pos) {
         if let Some(next_map) = current_level.next_map {
@@ -115,6 +119,7 @@ pub fn handle_location_switch(
             *enemies = current_level.enemies.clone();
             *dropped_weapons = current_level.dropped_weapons.clone();
             bullets.clear();
+            blood_pools.clear();
         }
     }
 }

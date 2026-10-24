@@ -32,7 +32,7 @@ jobs:
       - name: Prepare web files
         run: |
           mkdir -p dist
-          cp target/wasm32-unknown-unknown/release/dolbaeb-simulator.wasm dist/
+          cp target/wasm32-unknown-unknown/release/ds.wasm dist/
           cp index.html dist/
           curl -sSL https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js -o dist/mq_js_bundle.js
 

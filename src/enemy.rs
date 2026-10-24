@@ -1,5 +1,5 @@
 use crate::assets::Assets;
-use crate::audio::AudioManager;
+use crate::audio::{AudioManager, GameSound};
 use crate::entity::*;
 use crate::objects::{Bullet, BulletOwner, DroppedWeapon, Weapon};
 use crate::player::Player;
@@ -40,6 +40,8 @@ pub struct Enemy {
     pub legs_anim: AnimationState,
     pub weapon: Weapon,
     pub is_dead: bool,
+    // Лужа крови под трупом уже создана
+    pub blood_spawned: bool,
     pub is_moving: bool,
     pub is_attacking: bool,
     pub is_knock: bool,
@@ -50,6 +52,7 @@ pub struct Enemy {
     pub last_known_pos: Option<Vec2>,
     pub attack_timer: f32,
     pub knock_timer: f32,
+    pub ammo: u32,
 }
 
 impl Enemy {
@@ -70,6 +73,7 @@ impl Enemy {
             legs_anim: AnimationState::new(LEGS_FRAMES, 14.0, LEGS_ROW),
             weapon,
             is_dead: false,
+            blood_spawned: false,
             is_moving: false,
             is_attacking: false,
             is_knock: false,
@@ -80,6 +84,7 @@ impl Enemy {
             last_known_pos: None,
             attack_timer: 0.0,
             knock_timer: 0.0,
+            ammo: weapon.set_default_ammo(),
         }
     }
 
@@ -169,16 +174,10 @@ impl Enemy {
                         self.torso_anim.set_state(STUNNED_ROW, STUNNED_FRAMES, 1.0);
 
                         if self.weapon != Weapon::Fists && self.weapon != Weapon::Dead {
-                            let ammo = match self.weapon {
-                                Weapon::Pistol => 12,
-                                Weapon::Rifle => 30,
-                                Weapon::Shotgun => 6,
-                                _ => 0,
-                            };
                             dropped_weapons.push(DroppedWeapon::new(
                                 self.pos,
                                 self.weapon,
-                                ammo,
+                                self.ammo,
                                 self.rotation,
                             ));
                             self.weapon = Weapon::Fists;
@@ -187,13 +186,13 @@ impl Enemy {
                     }
                 }
                 Weapon::Knife => {
-                    audio.play(&audio.sound_knife);
-                    self.die(dropped_weapons);
+                    audio.play(GameSound::Knife);
+                    self.die(dropped_weapons, DeathCause::Knife);
                     return true;
                 }
                 Weapon::Pipe => {
-                    audio.play(&audio.sound_pipe);
-                    self.die(dropped_weapons);
+                    audio.play(GameSound::Pipe);
+                    self.die(dropped_weapons, DeathCause::Blunt);
                     return true;
                 }
                 _ => {}
@@ -325,7 +324,7 @@ impl Enemy {
                         self.is_attacking = true;
                         self.attack_timer = MELEE_ATTACK_TIME;
                         self.shoot_cooldown = 0.5;
-                        audio.play(&audio.sound_swosh);
+                        audio.play(GameSound::Swosh);
                         let (row, frames, fps) = self.weapon.anim_info();
                         self.torso_anim.set_state(row, frames, fps);
                     }
@@ -338,11 +337,16 @@ impl Enemy {
                             is_in_attack_sector(self.pos, self.rotation, player.pos, ATTACK_RADIUS);
                         if enemy_can_hit && !player.is_dead {
                             match self.weapon {
-                                Weapon::Knife => audio.play(&audio.sound_knife),
-                                Weapon::Pipe | Weapon::Fists => audio.play(&audio.sound_pipe),
+                                Weapon::Knife => audio.play(GameSound::Knife),
+                                Weapon::Pipe | Weapon::Fists => audio.play(GameSound::Pipe),
                                 _ => {}
                             }
-                            player.die(dropped_weapons);
+
+                            let cause = match self.weapon {
+                                Weapon::Knife => DeathCause::Knife,
+                                _ => DeathCause::Blunt,
+                            };
+                            player.die(dropped_weapons, cause);
                         }
                     }
                 }
@@ -379,12 +383,14 @@ impl Enemy {
                         && self.reaction_timer <= 0.0
                         && is_aimed
                         && active_map.has_line_of_sight(self.pos, player.pos)
+                        && self.ammo > 0
                     {
                         self.is_attacking = true;
+                        self.ammo -= 1;
 
                         if self.weapon == Weapon::Shotgun {
-                            let pellets = 5;
-                            let spread_angle = 0.3;
+                            let pellets = 6;
+                            let spread_angle = 0.15;
                             let base_angle = dir_to_player.y.atan2(dir_to_player.x);
 
                             for i in 0..pellets {
@@ -393,12 +399,12 @@ impl Enemy {
                                 let pellet_dir = vec2(angle.cos(), angle.sin());
                                 bullets.push(Bullet::new(self.pos, pellet_dir, BulletOwner::Enemy));
                             }
-                            audio.play(&audio.sound_shotgun);
+                            audio.play(GameSound::Shotgun);
                             self.shoot_cooldown = SHOTGUN_CD;
                         } else {
                             match self.weapon {
-                                Weapon::Rifle => audio.play(&audio.sound_ak47),
-                                Weapon::Pistol => audio.play(&audio.sound_pistol),
+                                Weapon::Rifle => audio.play(GameSound::Ak47),
+                                Weapon::Pistol => audio.play(GameSound::Pistol),
                                 _ => {}
                             }
                             bullets.push(Bullet::new(self.pos, dir_to_player, BulletOwner::Enemy));
@@ -477,7 +483,7 @@ impl Enemy {
         }
     }
 
-    pub fn die(&mut self, dropped_weapons: &mut Vec<DroppedWeapon>) {
+    pub fn die(&mut self, dropped_weapons: &mut Vec<DroppedWeapon>, cause: DeathCause) {
         char_die(
             self.pos,
             self.rotation,
@@ -486,6 +492,8 @@ impl Enemy {
             &mut self.weapon,
             &mut self.torso_anim,
             dropped_weapons,
+            self.ammo,
+            cause,
         );
     }
 

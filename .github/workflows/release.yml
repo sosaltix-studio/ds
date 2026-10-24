@@ -21,10 +21,10 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
-            artifact: dolbaeb-simulator-linux-x86_64
+            artifact: ds-linux-x86_64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact: dolbaeb-simulator-windows-x86_64.exe
+            artifact: ds-windows-x86_64.exe
 
     steps:
       - name: Checkout repository
@@ -52,14 +52,14 @@ jobs:
       
       - name: Verify Linux binary
         if: runner.os == 'Linux'
-        run: file target/${{ matrix.target }}/release/dolbaeb-simulator
+        run: file target/${{ matrix.target }}/release/ds
 
       - name: Stage binary
         shell: bash
         run: |
-          cp target/${{ matrix.target }}/release/dolbaeb-simulator.exe \
+          cp target/${{ matrix.target }}/release/ds.exe \
              ${{ matrix.artifact }} 2>/dev/null || \
-          cp target/${{ matrix.target }}/release/dolbaeb-simulator \
+          cp target/${{ matrix.target }}/release/ds \
              ${{ matrix.artifact }}
           chmod +x ${{ matrix.artifact }}
 
@@ -98,7 +98,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: Dolbaeb Simulator ${{ steps.tag.outputs.tag }}
+          name: DS ${{ steps.tag.outputs.tag }}
           files: dist/**
           generate_release_notes: true
           fail_on_unmatched_files: true

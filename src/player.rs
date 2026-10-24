@@ -1,16 +1,20 @@
 use crate::assets::Assets;
-use crate::audio::AudioManager;
+use crate::audio::{AudioManager, GameSound};
 use crate::enemy::Enemy;
 use crate::entity::*;
 use crate::input::GameInput;
 use crate::objects::{Bullet, BulletOwner, DroppedWeapon, Weapon};
 use crate::tilemap::{TilemapManager, WorldManager};
 use macroquad::prelude::*;
+pub const TIME_SLOW_FACTOR: f32 = 0.3;
+pub const TIME_SLOW_SPEED_MULT: f32 = 2.0;
 
 // Структура игрока
 pub struct Player {
     pub pos: Vec2,
     pub speed: f32,
+    pub ability_active: bool,
+    pub ability_charge: f32,
     pub rotation: f32,
     pub legs_rotation: f32,
     pub torso_anim: AnimationState,
@@ -32,6 +36,8 @@ impl Player {
         Self {
             pos: Vec2::new(0.0, 0.0),
             speed: PLAYER_SPEED,
+            ability_active: false,
+            ability_charge: 100.0,
             rotation: 0.0,
             legs_rotation: 0.0,
             torso_anim: AnimationState::new(1, 1.0, PUNCH_ROW),
@@ -57,6 +63,7 @@ impl Player {
         &mut self,
         input: &GameInput,
         dt: f32,
+        frame_dt: f32,
         world_manager: &WorldManager,
         dropped_weapons: &mut Vec<DroppedWeapon>,
         bullets: &mut Vec<Bullet>,
@@ -68,6 +75,8 @@ impl Player {
         if self.is_dead {
             return;
         }
+
+        self.handle_ability(input, frame_dt);
 
         self.handle_execute(input, dt, audio, dropped_weapons, enemies);
 
@@ -101,11 +110,17 @@ impl Player {
                 if let Some(idx) = self.executing_enemy_idx {
                     if idx < enemies.len() && !enemies[idx].is_dead {
                         match self.weapon {
-                            Weapon::Knife => audio.play(&audio.sound_knife),
-                            Weapon::Pipe | Weapon::Fists => audio.play(&audio.sound_pipe),
+                            Weapon::Knife => audio.play(GameSound::Knife),
+                            Weapon::Pipe | Weapon::Fists => audio.play(GameSound::Pipe),
                             _ => {}
                         }
-                        enemies[idx].die(dropped_weapons);
+
+                        // Причина смерти зависит от оружия казни
+                        let cause = match self.weapon {
+                            Weapon::Knife => DeathCause::Knife,
+                            _ => DeathCause::Blunt,
+                        };
+                        enemies[idx].die(dropped_weapons, cause);
                     }
                 }
 
@@ -143,6 +158,20 @@ impl Player {
                     return;
                 }
             }
+        }
+    }
+
+    fn handle_ability(&mut self, input: &GameInput, frame_dt: f32) {
+        if (input.ability_pressed && self.ability_charge > 20.0)
+            || (self.ability_active && self.ability_charge > 0.0 && input.ability_pressed)
+        {
+            self.speed = PLAYER_SPEED * TIME_SLOW_SPEED_MULT;
+            self.ability_charge -= 30.0 * frame_dt;
+            self.ability_active = true;
+        } else {
+            self.speed = PLAYER_SPEED;
+            self.ability_charge = self.ability_charge.clamp(0.0, 100.0) + 10.0 * frame_dt;
+            self.ability_active = false;
         }
     }
 
@@ -235,7 +264,7 @@ impl Player {
 
                 if self.weapon == Weapon::Shotgun {
                     let pellets = 6;
-                    let spread_angle = 0.25;
+                    let spread_angle = 0.15;
                     let base_angle = dir.y.atan2(dir.x);
 
                     for i in 0..pellets {
@@ -245,7 +274,8 @@ impl Player {
                         bullets.push(Bullet::new(self.pos, pellet_dir, BulletOwner::Player));
                     }
 
-                    audio.play(&audio.sound_shotgun);
+                    audio.play(GameSound::Shotgun);
+                    audio.play(GameSound::ShotgunReload);
                     self.shoot_cooldown = SHOTGUN_CD;
                 } else {
                     bullets.push(Bullet::new(self.pos, dir, BulletOwner::Player));
@@ -257,8 +287,8 @@ impl Player {
                     };
 
                     match self.weapon {
-                        Weapon::Rifle => audio.play(&audio.sound_ak47),
-                        Weapon::Pistol => audio.play(&audio.sound_pistol),
+                        Weapon::Rifle => audio.play(GameSound::Ak47),
+                        Weapon::Pistol => audio.play(GameSound::Pistol),
                         _ => {}
                     }
                 }
@@ -267,7 +297,7 @@ impl Player {
                 self.ammo = self.ammo.saturating_sub(1);
             } else if !is_firearm {
                 self.attack_timer = MELEE_ATTACK_TIME;
-                audio.play(&audio.sound_swosh);
+                audio.play(GameSound::Swosh);
             }
 
             let (row, frames, fps) = self.weapon.anim_info();
@@ -319,9 +349,15 @@ impl Player {
         self.is_executing = false;
         self.execution_orig_pos = pos;
         self.executing_enemy_idx = None;
+        self.ability_active = false;
+        self.ability_charge = 100.0;
+        self.speed = PLAYER_SPEED;
     }
 
-    pub fn die(&mut self, dropped_weapons: &mut Vec<DroppedWeapon>) {
+    pub fn die(&mut self, dropped_weapons: &mut Vec<DroppedWeapon>, cause: DeathCause) {
+        self.ability_active = false;
+        self.speed = PLAYER_SPEED;
+
         char_die(
             self.pos,
             self.rotation,
@@ -330,6 +366,8 @@ impl Player {
             &mut self.weapon,
             &mut self.torso_anim,
             dropped_weapons,
+            self.ammo,
+            cause,
         );
     }
 

@@ -24,9 +24,14 @@ mod tilemap;
 
 mod entity;
 
+// Кровь
+mod blood;
+
 mod audio;
 
 mod effect;
+
+mod time_fx;
 
 mod input;
 
@@ -42,7 +47,7 @@ const SCALE: f32 = 2.2;
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Dolbaeb Simulator".to_string(),
+        window_title: "DS".to_string(),
         platform: miniquad::conf::Platform {
             linux_backend: miniquad::conf::LinuxBackend::WaylandWithX11Fallback,
             ..Default::default()
@@ -61,10 +66,7 @@ async fn main() {
 
     // Главный игровой цикл
     loop {
-        // Дельта времени (чтобы игра работала одинаково при разном фпс)
-        let dt = get_frame_time();
-
-        game.update(dt);
+        game.update();
 
         next_frame().await;
     }

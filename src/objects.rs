@@ -30,8 +30,8 @@ impl Weapon {
         }
     }
 
-    pub fn default_ammo(&self) -> u32 {
-        match *self {
+    pub fn set_default_ammo(&self) -> u32 {
+        match self {
             Weapon::Rifle => 30,
             Weapon::Pistol => 12,
             Weapon::Shotgun => 6,
@@ -72,6 +72,22 @@ impl Bullet {
 
     pub fn draw(&self) {
         draw_circle(self.pos.x, self.pos.y, 2.0, YELLOW);
+    }
+
+    // Пуля с трассером — используется во время замедления времени
+    pub fn draw_traced(&self, trail_len: f32, intensity: f32) {
+        let tail = self.pos - self.dir * trail_len;
+
+        draw_line(
+            tail.x,
+            tail.y,
+            self.pos.x,
+            self.pos.y,
+            2.0,
+            Color::new(1.0, 0.88, 0.45, 0.6 * intensity),
+        );
+
+        self.draw();
     }
 }
 
@@ -114,14 +130,14 @@ pub fn update_bullets(
                 BulletOwner::Player => {
                     for enemy in enemies.iter_mut() {
                         if !enemy.is_dead && bullet.collider().overlaps(&enemy.collider()) {
-                            enemy.die(dropped_weapons);
+                            enemy.die(dropped_weapons, DeathCause::Firearm);
                             return false;
                         }
                     }
                 }
                 BulletOwner::Enemy => {
                     if !player.is_dead && bullet.collider().overlaps(&player.collider()) {
-                        player.die(dropped_weapons);
+                        player.die(dropped_weapons, DeathCause::Firearm);
                         return false;
                     }
                 }

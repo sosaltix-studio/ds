@@ -51,7 +51,32 @@ pub const LEGS_ROW: usize = 6;
 pub const LEGS_FRAMES: usize = 14;
 
 pub const DEAD_ROW: usize = 7;
-pub const DEAD_FRAMES: usize = 1;
+pub const DEAD_FRAMES: usize = 6;
+
+// Причина смерти выбирает пару кадров трупа в DEAD_ROW
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathCause {
+    Knife,
+    Firearm,
+    Blunt,
+}
+
+// По два кадра на каждую причину: нож, огнестрел, кулаки/труба
+const DEAD_KNIFE_START: usize = 0;
+const DEAD_FIREARM_START: usize = 2;
+const DEAD_BLUNT_START: usize = 4;
+
+impl DeathCause {
+    // Случайный кадр из пары; вызывается один раз в момент смерти
+    pub fn dead_frame(self) -> usize {
+        let start = match self {
+            DeathCause::Knife => DEAD_KNIFE_START,
+            DeathCause::Firearm => DEAD_FIREARM_START,
+            DeathCause::Blunt => DEAD_BLUNT_START,
+        };
+        start + rand::gen_range(0usize, 2)
+    }
+}
 
 pub const STUNNED_ROW: usize = 8;
 pub const STUNNED_FRAMES: usize = 1;
@@ -169,6 +194,8 @@ pub fn char_die(
     weapon: &mut Weapon,
     torso_anim: &mut AnimationState,
     dropped_weapons: &mut Vec<DroppedWeapon>,
+    ammo: u32,
+    cause: DeathCause,
 ) {
     if *is_dead {
         return;
@@ -177,20 +204,14 @@ pub fn char_die(
     *is_dead = true;
 
     if *weapon != Weapon::Fists && *weapon != Weapon::Dead {
-        let ammo = match weapon {
-            Weapon::Pistol => 12,
-            Weapon::Rifle => 30,
-            Weapon::Shotgun => 6,
-            _ => 0,
-        };
-
         dropped_weapons.push(DroppedWeapon::new(pos, *weapon, ammo, rotation));
     }
 
     *weapon = Weapon::Dead;
 
-    let (row, frames, fps) = weapon.anim_info();
-    torso_anim.set_state(row, frames, fps);
+    // Труп не анимируется: фиксируем один случайный кадр под причину смерти
+    torso_anim.set_state(DEAD_ROW, 1, 1.0);
+    torso_anim.current_frame = cause.dead_frame();
 }
 
 pub fn is_in_attack_sector(
@@ -219,6 +240,31 @@ pub fn draw_char(
     is_dead: bool,
     is_knock: bool,
 ) {
+    draw_char_tinted(
+        texture,
+        pos,
+        rotation,
+        legs_rotation,
+        torso_anim,
+        legs_anim,
+        is_dead,
+        is_knock,
+        WHITE,
+    );
+}
+
+// Отрисовка персонажа с произвольным цветом/прозрачностью (послеобразы и т.п.)
+pub fn draw_char_tinted(
+    texture: &Texture2D,
+    pos: Vec2,
+    rotation: f32,
+    legs_rotation: f32,
+    torso_anim: &AnimationState,
+    legs_anim: &AnimationState,
+    is_dead: bool,
+    is_knock: bool,
+    color: Color,
+) {
     let half_scaled_size = SCALED_SIZE / 2.0;
     let visual_offset = vec2(SPRITE_OFFSET_X * SCALE, SPRITE_OFFSET_Y * SCALE);
 
@@ -231,7 +277,7 @@ pub fn draw_char(
             texture,
             pos.x - half_scaled_size,
             pos.y - half_scaled_size,
-            WHITE,
+            color,
             DrawTextureParams {
                 dest_size: Some(vec2(SCALED_SIZE, SCALED_SIZE)),
                 source: Some(Rect::new(legs_src_x, legs_src_y, SPRITE_SIZE, SPRITE_SIZE)),
@@ -250,7 +296,7 @@ pub fn draw_char(
         texture,
         pos.x - half_scaled_size + visual_offset.x,
         pos.y - half_scaled_size + visual_offset.y,
-        WHITE,
+        color,
         DrawTextureParams {
             dest_size: Some(vec2(SCALED_SIZE, SCALED_SIZE)),
             source: Some(Rect::new(

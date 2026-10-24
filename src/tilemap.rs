@@ -11,9 +11,6 @@ use std::collections::BinaryHeap;
 pub enum MapId {
     House = 0,
     Level1_1 = 1,
-    Level1_2 = 2,
-    Level2_1 = 3,
-    Level2_2 = 4,
 }
 
 struct MapConfig {
@@ -389,18 +386,18 @@ pub struct WorldManager {
 
 const CONFIGS: [MapConfig; 2] = [
     MapConfig {
-        json_str: include_str!("../assets/house.json"),
-        atlas_bytes: include_bytes!("../assets/tileset.png"),
-        texture_bytes: include_bytes!("../assets/house.png"),
+        json_str: include_str!("../assets/maps/house.json"),
+        atlas_bytes: include_bytes!("../assets/maps/tileset.png"),
+        texture_bytes: include_bytes!("../assets/maps/house.png"),
         width: 20,
         height: 20,
         tile_w: 16.0,
         tile_h: 16.0,
     },
     MapConfig {
-        json_str: include_str!("../assets/level1_1.json"),
-        atlas_bytes: include_bytes!("../assets/tileset.png"),
-        texture_bytes: include_bytes!("../assets/level1_1.png"),
+        json_str: include_str!("../assets/maps/level1_1.json"),
+        atlas_bytes: include_bytes!("../assets/maps/tileset.png"),
+        texture_bytes: include_bytes!("../assets/maps/level1_1.png"),
         width: 60,
         height: 30,
         tile_w: 16.0,

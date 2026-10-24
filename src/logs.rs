@@ -27,7 +27,7 @@ pub const BOOT_LOGS: &[&str] = &[
     "  [.] shell... OK",
     "",
     "========================================",
-    "     Welcome to dolbaeb simulator!",
+    "            Welcome to DS!",
     "        the best game in 2026",
     "========================================",
     "",
