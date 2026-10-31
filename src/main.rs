@@ -43,7 +43,7 @@ mod level;
 
 mod lighting;
 
-const SCALE: f32 = 2.2;
+pub const SCALE: f32 = 2.2;
 
 fn window_conf() -> Conf {
     Conf {
