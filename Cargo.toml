@@ -17,9 +17,3 @@ strip = true
 
 [profile.dev.package."*"]
 opt-level = 3
-
-[package.metadata.appimage]
-assets = ["assets"]
-
-[package.metadata.android]
-assets = "assets/"
