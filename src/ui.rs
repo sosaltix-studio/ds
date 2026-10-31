@@ -234,7 +234,7 @@ impl UiManager {
                 self.log("Restarting level...", GREEN);
             }
             "clear" => self.history.clear(),
-            "exit" | "quit" => std::process::exit(0),
+            "exit" | "quit" => miniquad::window::quit(),
             "set-volume" => {
                 if let Some(Ok(val)) = args.first().map(|s| s.parse::<f32>()) {
                     let clamped = val.clamp(0.0, 100.0);
