@@ -109,7 +109,7 @@ pub fn handle_location_switch(
     bullets: &mut Vec<Bullet>,
     blood_pools: &mut BloodManager,
 ) {
-    if current_level.exit_trigger.contains(player.pos) {
+    if current_level.exit_trigger.contains(player.pos) && !player.is_executing && !player.is_dead {
         if let Some(next_map) = current_level.next_map {
             let target_pos = current_level.next_player_pos;
             *current_level = Level::get(next_map);
