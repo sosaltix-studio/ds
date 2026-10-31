@@ -220,18 +220,9 @@ impl UiManager {
         let args: Vec<&str> = parts.collect();
 
         match cmd.as_str() {
-            "start" | "resume" => {
+            "start" => {
                 self.change_state(GameState::Playing);
                 self.log("Game started.", GREEN);
-            }
-            "pause" => {
-                self.change_state(GameState::Pause);
-                self.log("Game paused.", GREEN);
-            }
-            "restart" => {
-                self.restart_requested = true;
-                self.change_state(GameState::Playing);
-                self.log("Restarting level...", GREEN);
             }
             "clear" => self.history.clear(),
             "exit" | "quit" => miniquad::window::quit(),
@@ -251,7 +242,7 @@ impl UiManager {
             }
             "help" => {
                 self.log(
-                    "Commands: start, pause, resume, restart, status, set-volume <0-100>, set-fullscreen, clear, boot, exit",
+                    "Commands: start, set-volume <0-100>, set-fullscreen, clear, exit",
                     LIGHTGRAY,
                 );
             }
