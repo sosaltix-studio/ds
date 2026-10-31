@@ -11,7 +11,7 @@ const GHOST_COLOR: Color = Color::new(0.65, 0.85, 1.0, 1.0);
 const GHOST_ALPHA: f32 = 0.35;
 const GHOST_LIFE: f32 = 0.65;
 const GHOST_SPAWN_INTERVAL: f32 = 0.04;
-const MAX_GHOSTS: usize = 6;
+const MAX_GHOSTS: usize = 30;
 
 struct Ripple {
     pos: Vec2,
