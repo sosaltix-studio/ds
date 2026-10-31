@@ -61,7 +61,7 @@ impl Game {
         }
     }
 
-    pub fn restart(&mut self) {
+    pub fn restart(&mut self, raw_aim_world_pos: Vec2) {
         self.world_manager.switch_to(self.current_level.map_id);
         self.player.restart(self.current_level.player_start);
         self.enemies = self.current_level.enemies.clone();
@@ -71,6 +71,7 @@ impl Game {
         self.time_ml = 1.0;
         self.time_fx.clear();
         self.blood_pools.clear();
+        self.virtual_cursor.reset(raw_aim_world_pos);
     }
 
     pub fn update(&mut self) {
@@ -95,12 +96,12 @@ impl Game {
         if self.ui_manager.game_state == GameState::Playing
             && self.ui_manager.previous_state == GameState::Terminal
         {
-            self.restart();
+            self.restart(self.input.raw_aim_world_pos);
             self.ui_manager.previous_state = GameState::Playing;
         }
 
         if self.ui_manager.restart_requested {
-            self.restart();
+            self.restart(self.input.raw_aim_world_pos);
             self.ui_manager.restart_requested = false;
         }
 
@@ -261,7 +262,7 @@ impl Game {
             if self.player.is_dead {
                 draw_dead_menu(&self.assets);
                 if self.input.restart_pressed {
-                    self.restart();
+                    self.restart(self.input.raw_aim_world_pos);
                 }
             }
             self.ui_manager.update(&mut self.audio_manager, &self.input);

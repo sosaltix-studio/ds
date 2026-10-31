@@ -25,13 +25,12 @@ impl VirtualCursor {
         toggle_lock_on: bool,
     ) {
         if player_is_dead {
-            self.locked_enemy_idx = None;
-            self.world_pos = raw_world_pos;
+            self.reset(raw_world_pos);
             return;
         }
 
         if let Some(idx) = self.locked_enemy_idx {
-            if idx >= enemies.len() || enemies[idx].is_dead {
+            if idx >= enemies.len() || enemies[idx].is_dead || enemies[idx].is_knock {
                 self.locked_enemy_idx = None;
             }
         }
@@ -65,6 +64,11 @@ impl VirtualCursor {
 
     pub fn is_locked(&self) -> bool {
         self.locked_enemy_idx.is_some()
+    }
+
+    pub fn reset(&mut self, raw_world_pos: Vec2) {
+        self.locked_enemy_idx = None;
+        self.world_pos = raw_world_pos;
     }
 }
 
