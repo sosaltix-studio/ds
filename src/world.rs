@@ -76,7 +76,7 @@ impl Game {
     pub fn update(&mut self) {
         self.input = collect_input(&self.camera_manager.camera);
 
-        let frame_dt = get_frame_time();
+        let frame_dt = get_frame_time().clamp(0.0, 0.06);
         let dt = frame_dt * self.time_ml;
 
         self.virtual_cursor.update(
