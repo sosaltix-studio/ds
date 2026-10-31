@@ -30,8 +30,10 @@ DS (Dolbaeb Simulator) - игра написанная на Rust (macroquad)
    rustup target add wasm32-unknown-unknown
 
    cargo build --release --target wasm32-unknown-unknown
+
+   cp target/wasm32-unknown-unknown/release/ds.wasm .
    
    python -m http.server
 
    ```
-Игра будет доступна здесь http://0.0.0.0:8000/
+Игра будет доступна здесь http://localhost:8000/
