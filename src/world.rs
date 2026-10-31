@@ -139,6 +139,8 @@ impl Game {
                 self.camera_manager.set_time_slow_active(ability_active);
 
                 let camera_focus = self.input.look_around || self.virtual_cursor.is_locked();
+                self.camera_manager
+                    .set_bounds(self.world_manager.get_active().bounds());
                 self.camera_manager.update(
                     self.player.pos,
                     self.input.aim_world_pos,
@@ -193,6 +195,7 @@ impl Game {
                     alert_enemies(&mut self.enemies, &shot_pos);
                 }
 
+                let previous_map = self.current_level.map_id;
                 handle_location_switch(
                     &mut self.current_level,
                     &mut self.world_manager,
@@ -202,6 +205,14 @@ impl Game {
                     &mut self.bullets,
                     &mut self.blood_pools,
                 );
+
+                // При смене локации сразу переносим камеру к игроку,
+                // чтобы она не проезжала через границы новой карты.
+                if self.current_level.map_id != previous_map {
+                    self.camera_manager
+                        .set_bounds(self.world_manager.get_active().bounds());
+                    self.camera_manager.snap_to(self.player.pos);
+                }
             } else {
                 self.camera_manager.set_time_slow_active(false);
                 self.camera_manager.update_time_slow(frame_dt);

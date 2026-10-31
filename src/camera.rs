@@ -8,6 +8,7 @@ pub struct CameraManager {
     pub camera: Camera2D,
 
     target_pos: Vec2,
+    bounds: Option<Rect>,
 
     shake_timer: f32,
     shake_duration: f32,
@@ -31,6 +32,7 @@ impl CameraManager {
         Self {
             camera,
             target_pos: Vec2::ZERO,
+            bounds: None,
             shake_timer: 0.0,
             shake_duration: 0.0,
             shake_intensity: 0.0,
@@ -40,6 +42,48 @@ impl CameraManager {
             time_slow: TimeSlowEffect::new(),
             scene_target,
         }
+    }
+
+    /// Задаёт прямоугольник локации, за границы которого камера не должна выходить.
+    pub fn set_bounds(&mut self, bounds: Rect) {
+        self.bounds = Some(bounds);
+    }
+
+    /// Мгновенно ставит камеру в точку (используется при смене локации).
+    pub fn snap_to(&mut self, pos: Vec2) {
+        self.update_zoom();
+        self.target_pos = self.clamp_to_bounds(pos);
+        self.camera.target = self.target_pos;
+    }
+
+    fn update_zoom(&mut self) {
+        self.camera.zoom = vec2(2.4 / screen_width(), 2.4 / screen_height());
+    }
+
+    /// Не даёт камере показать пространство за пределами локации.
+    fn clamp_to_bounds(&self, pos: Vec2) -> Vec2 {
+        let Some(bounds) = self.bounds else {
+            return pos;
+        };
+
+        // Половина видимой области в мировых координатах при текущем зуме.
+        let half_view = vec2(1.0 / self.camera.zoom.x, 1.0 / self.camera.zoom.y);
+
+        // Если локация меньше экрана, центрируем её.
+        let x = if bounds.w <= half_view.x * 2.0 {
+            bounds.x + bounds.w * 0.5
+        } else {
+            pos.x
+                .clamp(bounds.x + half_view.x, bounds.x + bounds.w - half_view.x)
+        };
+        let y = if bounds.h <= half_view.y * 2.0 {
+            bounds.y + bounds.h * 0.5
+        } else {
+            pos.y
+                .clamp(bounds.y + half_view.y, bounds.y + bounds.h - half_view.y)
+        };
+
+        vec2(x, y)
     }
 
     pub fn set_story_effect(&mut self, active: bool) {
@@ -70,6 +114,8 @@ impl CameraManager {
         dt: f32,
         real_dt: f32,
     ) {
+        self.update_zoom();
+
         let desired_target = if look_around {
             let offset = aim_world_pos - player_pos;
             let clamped_offset = vec2(
@@ -80,9 +126,10 @@ impl CameraManager {
         } else {
             player_pos
         };
+        let desired_target = self.clamp_to_bounds(desired_target);
 
         let factor = 1.0 - (-CAMERA_SMOOTH_SPEED * dt).exp();
-        self.target_pos = self.target_pos.lerp(desired_target, factor);
+        self.target_pos = self.clamp_to_bounds(self.target_pos.lerp(desired_target, factor));
 
         let mut shake_offset = Vec2::ZERO;
         if self.shake_timer > 0.0 {
@@ -107,8 +154,8 @@ impl CameraManager {
         self.time_slow.update(real_dt);
         self.sync_scene_target();
 
-        self.camera.zoom = vec2(2.4 / screen_width(), 2.4 / screen_height());
-        self.camera.target = self.target_pos + shake_offset;
+        // Тряска тоже не должна выводить камеру за пределы локации.
+        self.camera.target = self.clamp_to_bounds(self.target_pos + shake_offset);
     }
 
     fn sync_scene_target(&mut self) {
