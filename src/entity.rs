@@ -85,7 +85,7 @@ pub const EXECUTE_PIPE_ROW: usize = 8;
 pub const EXECUTE_PIPE_FRAMES: usize = 6;
 
 pub const EXECUTE_FISTS_ROW: usize = 9;
-pub const EXECUTE_FISTS_FRAMES: usize = 12;
+pub const EXECUTE_FISTS_FRAMES: usize = 7;
 
 pub const EXECUTE_KNIFE_ROW: usize = 10;
 pub const EXECUTE_KNIFE_FRAMES: usize = 5;
