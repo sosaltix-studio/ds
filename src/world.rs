@@ -304,9 +304,12 @@ impl Game {
                 self.camera_manager.time_slow.intensity,
             );
 
-            draw_ui(&self.assets, &self.player);
+            self.ui_manager
+                .update_hud_text(self.player.ammo, self.player.ability_charge);
 
-            draw_time_slow_hud(&self.assets, &self.player);
+            draw_ui(&self.assets, &self.player, self.ui_manager.ammo_text());
+
+            draw_time_slow_hud(&self.assets, self.ui_manager.charge_text());
 
             self.ui_manager.draw(&self.assets);
         }

@@ -6,9 +6,13 @@ use crate::objects::Weapon;
 use crate::player::Player;
 use macroquad::prelude::*;
 use std::collections::VecDeque;
+use std::fmt::Write as _;
 
 const MAX_LOG_HISTORY: usize = 100;
 const PAUSE_MENU_OPTIONS: [&str; 3] = ["RESUME", "RESTART", "TO TERMINAL"];
+const PAUSE_MENU_SELECTED: [&str; 3] = ["> RESUME", "> RESTART", "> TO TERMINAL"];
+const TERMINAL_FONT_SIZE: u16 = 24;
+const TERMINAL_LINE_HEIGHT: f32 = 24.0;
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum GameState {
@@ -47,6 +51,16 @@ pub struct UiManager {
     pub boot_logs_idx: usize,
     pub boot_timer: f32,
     pub boot_delay: f32,
+
+    // Текст HUD пересобирается только при изменении значения.
+    ammo_text: String,
+    ammo_value: Option<u32>,
+    charge_text: String,
+    charge_value: Option<u32>,
+    // Терминал перерисовывается в текстуру только при изменении истории.
+    prompt_text: String,
+    terminal_texture: Option<RenderTarget>,
+    terminal_dirty: bool,
 }
 
 impl Default for UiManager {
@@ -65,6 +79,13 @@ impl Default for UiManager {
             boot_logs_idx: 0,
             boot_timer: 0.0,
             boot_delay: 0.07,
+            ammo_text: String::with_capacity(24),
+            ammo_value: None,
+            charge_text: String::with_capacity(8),
+            charge_value: None,
+            prompt_text: String::with_capacity(64),
+            terminal_texture: None,
+            terminal_dirty: true,
         };
 
         ui.run_boot_sequence();
@@ -77,9 +98,40 @@ impl UiManager {
         Self::default()
     }
 
+    // Текст HUD обновляется, только когда меняется само значение.
+    pub fn update_hud_text(&mut self, ammo: u32, charge: f32) {
+        if self.ammo_value != Some(ammo) {
+            self.ammo_text.clear();
+            let _ = write!(self.ammo_text, "AMMO: {ammo}");
+            self.ammo_value = Some(ammo);
+        }
+
+        let charge = charge.round().max(0.0) as u32;
+        if self.charge_value != Some(charge) {
+            self.charge_text.clear();
+            let _ = write!(self.charge_text, "{charge}");
+            self.charge_value = Some(charge);
+        }
+    }
+
+    pub fn ammo_text(&self) -> &str {
+        &self.ammo_text
+    }
+
+    pub fn charge_text(&self) -> &str {
+        &self.charge_text
+    }
+
     pub fn change_state(&mut self, new_state: GameState) {
         self.previous_state = self.game_state;
         self.game_state = new_state;
+
+        if new_state == GameState::Terminal {
+            self.terminal_dirty = true;
+        } else {
+            // В игре терминал не виден — не держим полноэкранную текстуру.
+            self.terminal_texture = None;
+        }
     }
 
     pub fn log(&mut self, text: impl Into<String>, color: Color) {
@@ -87,12 +139,14 @@ impl UiManager {
             self.history.pop_front();
         }
         self.history.push_back(TuiLine::new(text, color));
+        self.terminal_dirty = true;
     }
 
     pub fn run_boot_sequence(&mut self) {
         self.history.clear();
         self.boot_logs_idx = 0;
         self.boot_timer = 0.0;
+        self.terminal_dirty = true;
     }
 
     pub fn update(&mut self, audio_manager: &mut AudioManager, input: &GameInput) {
@@ -120,7 +174,7 @@ impl UiManager {
         }
     }
 
-    pub fn draw(&self, assets: &Assets) {
+    pub fn draw(&mut self, assets: &Assets) {
         match self.game_state {
             GameState::Terminal => self.draw_terminal(assets),
             GameState::Pause => draw_pause_menu(assets, self.pause_selected_idx),
@@ -224,7 +278,10 @@ impl UiManager {
                 self.change_state(GameState::Playing);
                 self.log("Game started.", GREEN);
             }
-            "clear" => self.history.clear(),
+            "clear" => {
+                self.history.clear();
+                self.terminal_dirty = true;
+            }
             "exit" | "quit" => miniquad::window::quit(),
             "set-volume" => {
                 if let Some(Ok(val)) = args.first().map(|s| s.parse::<f32>()) {
@@ -252,20 +309,84 @@ impl UiManager {
         }
     }
 
-    fn draw_terminal(&self, assets: &Assets) {
+    fn draw_terminal(&mut self, assets: &Assets) {
         set_default_camera();
+
+        self.ensure_terminal_target();
+        if self.terminal_dirty {
+            self.redraw_terminal_cache(assets);
+        }
+
+        if let Some(target) = &self.terminal_texture {
+            draw_texture_ex(
+                &target.texture,
+                0.0,
+                0.0,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(screen_width(), screen_height())),
+                    flip_y: true,
+                    ..Default::default()
+                },
+            );
+        }
+
+        let cursor = if (self.cursor_timer * 3.0) as usize % 2 == 0 {
+            "_"
+        } else {
+            ""
+        };
+
+        self.prompt_text.clear();
+        self.prompt_text.push_str("user@zinux:~$ ");
+        self.prompt_text.push_str(&self.input_buffer);
+        self.prompt_text.push_str(cursor);
+
+        draw_ui_text(
+            &assets.font,
+            &self.prompt_text,
+            20.0,
+            screen_height() - 15.0,
+            TERMINAL_FONT_SIZE,
+            GREEN,
+        );
+    }
+
+    fn ensure_terminal_target(&mut self) {
+        let width = screen_width().max(1.0) as u32;
+        let height = screen_height().max(1.0) as u32;
+
+        let needs_recreate = match &self.terminal_texture {
+            Some(target) => {
+                target.texture.width() as u32 != width || target.texture.height() as u32 != height
+            }
+            None => true,
+        };
+
+        if needs_recreate {
+            let target = render_target(width, height);
+            target.texture.set_filter(FilterMode::Nearest);
+            self.terminal_texture = Some(target);
+            self.terminal_dirty = true;
+        }
+    }
+
+    // Заголовок и история статичны между сообщениями, поэтому рисуются
+    // в текстуру только при изменении истории или размера окна.
+    fn redraw_terminal_cache(&mut self, assets: &Assets) {
+        let Some(target) = &self.terminal_texture else {
+            return;
+        };
+
+        let width = screen_width();
+        let height = screen_height();
+
+        let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, width, height));
+        camera.render_target = Some(target.clone());
+        set_camera(&camera);
         clear_background(BLACK);
 
-        let font_size = 24;
-        let line_h = 24.0;
-
-        draw_rectangle(
-            0.0,
-            0.0,
-            screen_width(),
-            30.0,
-            Color::new(0.1, 0.1, 0.1, 1.0),
-        );
+        draw_rectangle(0.0, 0.0, width, 30.0, Color::new(0.1, 0.1, 0.1, 1.0));
         draw_ui_text(
             &assets.font,
             "ZINUX v14.88 Rust edition",
@@ -274,32 +395,26 @@ impl UiManager {
             18,
             YELLOW,
         );
-        draw_line(0.0, 30.0, screen_width(), 30.0, 1.0, GREEN);
+        draw_line(0.0, 30.0, width, 30.0, 1.0, GREEN);
 
-        let max_lines = ((screen_height() - 85.0) / line_h).max(1.0) as usize;
+        let max_lines = ((height - 85.0) / TERMINAL_LINE_HEIGHT).max(1.0) as usize;
         let visible_lines = self.history.iter().rev().take(max_lines).rev();
 
         let mut cur_y = 50.0;
         for line in visible_lines {
-            draw_ui_text(&assets.font, &line.text, 20.0, cur_y, font_size, line.color);
-            cur_y += line_h;
+            draw_ui_text(
+                &assets.font,
+                &line.text,
+                20.0,
+                cur_y,
+                TERMINAL_FONT_SIZE,
+                line.color,
+            );
+            cur_y += TERMINAL_LINE_HEIGHT;
         }
 
-        let cursor = if (self.cursor_timer * 3.0) as usize % 2 == 0 {
-            "_"
-        } else {
-            ""
-        };
-        let prompt_text = format!("user@zinux:~$ {}{cursor}", self.input_buffer);
-
-        draw_ui_text(
-            &assets.font,
-            &prompt_text,
-            20.0,
-            screen_height() - 15.0,
-            font_size,
-            GREEN,
-        );
+        set_default_camera();
+        self.terminal_dirty = false;
     }
 }
 
@@ -317,16 +432,15 @@ fn draw_ui_text(font: &Font, text: &str, x: f32, y: f32, font_size: u16, color: 
     );
 }
 
-pub fn draw_ui(assets: &Assets, player: &Player) {
+pub fn draw_ui(assets: &Assets, player: &Player, ammo_text: &str) {
     if matches!(
         player.weapon,
         Weapon::Pistol | Weapon::Rifle | Weapon::Shotgun
     ) {
         set_default_camera();
-        let ammo_text = format!("AMMO: {}", player.ammo);
         draw_ui_text(
             &assets.font,
-            &ammo_text,
+            ammo_text,
             screen_width() - 200.0,
             screen_height() - 50.0,
             32,
@@ -335,14 +449,12 @@ pub fn draw_ui(assets: &Assets, player: &Player) {
     }
 }
 
-pub fn draw_time_slow_hud(assets: &Assets, player: &Player) {
+pub fn draw_time_slow_hud(assets: &Assets, charge_text: &str) {
     set_default_camera();
-
-    let text = format!("{:.0}", player.ability_charge);
 
     draw_ui_text(
         &assets.font,
-        &text,
+        charge_text,
         40.0,
         screen_height() - 50.0,
         28,
@@ -373,14 +485,14 @@ pub fn draw_pause_menu(assets: &Assets, selected_idx: usize) {
         let is_selected = i == selected_idx;
         let color = if is_selected { YELLOW } else { WHITE };
         let text = if is_selected {
-            format!("> {option}")
+            PAUSE_MENU_SELECTED[i]
         } else {
-            option.to_string()
+            option
         };
 
         draw_ui_text(
             &assets.font,
-            &text,
+            text,
             screen_width() / 2.0 - 130.0,
             screen_height() / 2.0 + (i as f32 * 45.0),
             24,
