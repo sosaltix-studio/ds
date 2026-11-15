@@ -45,6 +45,7 @@ impl GameSound {
 }
 
 const SOUND_COUNT: usize = GameSound::ALL.len();
+const DEFAULT_VOLUME: f32 = 0.5;
 
 // Замедление как у магнитофона: скорость и высота тона падают вместе.
 const SLOW_PLAYBACK_RATE: f64 = 0.4;
@@ -98,7 +99,7 @@ fn gain_to_db(gain: f32) -> Decibels {
 }
 
 pub struct AudioManager {
-    pub volume: f32,
+    volume: f32,
     duck: f32,
     time_loop_playing: bool,
     time_loop_fade: f32,
@@ -116,18 +117,25 @@ impl AudioManager {
             }
         };
 
-        Self {
-            volume: 0.5,
+        let mut manager = Self {
+            volume: DEFAULT_VOLUME,
             duck: 1.0,
             time_loop_playing: false,
             time_loop_fade: 0.0,
             slow_playback: false,
             game,
-        }
+        };
+
+        manager.apply_volume();
+        manager
     }
 
     pub fn play(&mut self, sound: GameSound) {
-        let gain = self.volume * self.duck;
+        if self.volume <= 0.0 {
+            return;
+        }
+
+        let gain = self.duck;
         if gain <= 0.0 {
             return;
         }
@@ -154,6 +162,15 @@ impl AudioManager {
 
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
+        self.apply_volume();
+    }
+
+    fn apply_volume(&mut self) {
+        if let Some(game) = &mut self.game {
+            game.manager
+                .main_track()
+                .set_volume(gain_to_db(self.volume), kira::Tween::default());
+        }
     }
 
     pub fn update(&mut self, real_dt: f32, time_slow_active: bool) {
@@ -172,7 +189,7 @@ impl AudioManager {
                     let enter = game
                         .time_enter
                         .clone()
-                        .volume(gain_to_db(TIME_ENTER_VOLUME * self.volume));
+                        .volume(gain_to_db(TIME_ENTER_VOLUME));
                     if let Err(error) = game.manager.play(enter) {
                         eprintln!("не удалось проиграть звук входа в замедление: {error}");
                     }
@@ -196,7 +213,7 @@ impl AudioManager {
             if let Some(game) = &mut self.game {
                 if let Some(handle) = &mut game.time_loop_handle {
                     handle.set_volume(
-                        gain_to_db(TIME_LOOP_VOLUME * self.time_loop_fade * self.volume),
+                        gain_to_db(TIME_LOOP_VOLUME * self.time_loop_fade),
                         kira::Tween::default(),
                     );
                 }
@@ -216,7 +233,7 @@ impl AudioManager {
                     let exit = game
                         .time_exit
                         .clone()
-                        .volume(gain_to_db(TIME_EXIT_VOLUME * self.volume));
+                        .volume(gain_to_db(TIME_EXIT_VOLUME));
                     if let Err(error) = game.manager.play(exit) {
                         eprintln!("не удалось проиграть звук выхода из замедления: {error}");
                     }
@@ -224,7 +241,7 @@ impl AudioManager {
             } else if let Some(game) = &mut self.game {
                 if let Some(handle) = &mut game.time_loop_handle {
                     handle.set_volume(
-                        gain_to_db(TIME_LOOP_VOLUME * self.time_loop_fade * self.volume),
+                        gain_to_db(TIME_LOOP_VOLUME * self.time_loop_fade),
                         kira::Tween::default(),
                     );
                 }
