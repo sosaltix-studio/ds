@@ -127,7 +127,10 @@ pub fn update_bullets(
             match bullet.owner {
                 BulletOwner::Player => {
                     for enemy in enemies.iter_mut() {
-                        if !enemy.is_dead && bullet.collider().overlaps(&enemy.collider()) {
+                        if !enemy.is_dead
+                            && !enemy.is_knock
+                            && bullet.collider().overlaps(&enemy.collider())
+                        {
                             enemy.die(dropped_weapons, DeathCause::Firearm);
                             return false;
                         }
