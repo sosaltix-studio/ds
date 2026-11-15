@@ -136,27 +136,36 @@ impl Player {
 
         if input.execute_pressed && !self.is_attacking {
             let can_execute = matches!(self.weapon, Weapon::Fists | Weapon::Pipe | Weapon::Knife);
-            if can_execute {
-                if let Some(idx) = enemies.iter().position(|e| {
-                    !e.is_dead && e.is_knock && self.pos.distance(e.pos) <= ATTACK_RADIUS
-                }) {
-                    self.is_executing = true;
-                    self.execution_orig_pos = self.pos;
-                    self.executing_enemy_idx = Some(idx);
+            if !can_execute {
+                dropped_weapons.push(DroppedWeapon::new(
+                    self.pos,
+                    self.weapon,
+                    self.ammo,
+                    self.rotation,
+                ));
+                self.weapon = Weapon::Fists;
+            }
 
-                    self.pos = enemies[idx].pos;
-                    self.rotation = enemies[idx].rotation;
+            if let Some(idx) = enemies
+                .iter()
+                .position(|e| !e.is_dead && e.is_knock && self.pos.distance(e.pos) <= ATTACK_RADIUS)
+            {
+                self.is_executing = true;
+                self.execution_orig_pos = self.pos;
+                self.executing_enemy_idx = Some(idx);
 
-                    let (exec_row, exec_frames, exec_fps) = match self.weapon {
-                        Weapon::Pipe => (EXECUTE_PIPE_ROW, EXECUTE_PIPE_FRAMES, 10.0),
-                        Weapon::Knife => (EXECUTE_KNIFE_ROW, EXECUTE_KNIFE_FRAMES, 10.0),
-                        Weapon::Fists => (EXECUTE_FISTS_ROW, EXECUTE_FISTS_FRAMES, 12.0),
-                        _ => (PUNCH_ROW, 1, 1.0),
-                    };
+                self.pos = enemies[idx].pos;
+                self.rotation = enemies[idx].rotation;
 
-                    self.torso_anim.set_state(exec_row, exec_frames, exec_fps);
-                    return;
-                }
+                let (exec_row, exec_frames, exec_fps) = match self.weapon {
+                    Weapon::Pipe => (EXECUTE_PIPE_ROW, EXECUTE_PIPE_FRAMES, 10.0),
+                    Weapon::Knife => (EXECUTE_KNIFE_ROW, EXECUTE_KNIFE_FRAMES, 10.0),
+                    Weapon::Fists => (EXECUTE_FISTS_ROW, EXECUTE_FISTS_FRAMES, 12.0),
+                    _ => (PUNCH_ROW, 1, 1.0),
+                };
+
+                self.torso_anim.set_state(exec_row, exec_frames, exec_fps);
+                return;
             }
         }
     }
