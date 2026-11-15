@@ -107,8 +107,6 @@ impl Game {
 
         if self.ui_manager.game_state == GameState::Terminal {
             self.ui_manager.update(&mut self.audio_manager, &self.input);
-            self.ui_manager.draw(&self.assets);
-
             self.audio_manager.update(frame_dt, false);
         } else {
             if self.ui_manager.game_state == GameState::Playing {
