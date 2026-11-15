@@ -29,6 +29,9 @@ mod blood;
 
 mod audio;
 
+#[cfg(target_arch = "wasm32")]
+mod wasm_audio;
+
 mod effect;
 
 mod time_fx;

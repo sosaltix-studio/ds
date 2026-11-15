@@ -8,9 +8,13 @@ macroquad = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# kira не поддерживает wasm без wasm-bindgen, поэтому на вебе звук пока отключён.
+# На десктопе kira использует cpal, на wasm — собственный WebAudio-backend
+# (cpal на wasm требует wasm-bindgen и несовместим с загрузчиком miniquad).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 kira = { version = "0.12", default-features = false, features = ["cpal", "ogg", "vorbis"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+kira = { version = "0.12", default-features = false, features = ["ogg", "vorbis"] }
 
 [profile.release]
 opt-level = 3
