@@ -173,7 +173,7 @@ impl Enemy {
                         self.knock_timer = 4.0;
                         self.torso_anim.set_state(STUNNED_ROW, STUNNED_FRAMES, 1.0);
 
-                        if self.weapon != Weapon::Fists && self.weapon != Weapon::Dead {
+                        if self.weapon != Weapon::Fists {
                             dropped_weapons.push(DroppedWeapon::new(
                                 self.pos,
                                 self.weapon,
