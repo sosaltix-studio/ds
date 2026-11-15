@@ -194,26 +194,17 @@ impl CameraManager {
             return;
         }
 
-        let mut source = self.scene_target.texture.clone();
-
-        if self.time_slow.is_active() {
-            self.time_slow.process(&source);
-            source = self.time_slow.out_texture();
-        }
+        let scene = self.scene_target.texture.clone();
+        let slow_active = self.time_slow.is_active();
 
         if self.trip_effect.intensity > 0.0 {
-            self.trip_effect.render_to_screen(&source);
-        } else {
-            draw_texture_ex(
-                &source,
-                0.0,
-                0.0,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(vec2(screen_width(), screen_height())),
-                    ..Default::default()
-                },
-            );
+            // Шейдер замедления применяется прямо при накоплении trip-трейла,
+            // поэтому отдельный out_target не нужен.
+            let time_slow = if slow_active { Some(&self.time_slow) } else { None };
+            self.trip_effect.render_to_screen(&scene, time_slow);
+        } else if slow_active {
+            // Только замедление: один полноэкранный проход сразу в экран.
+            self.time_slow.draw_to_screen(&scene);
         }
 
         self.camera.render_target = None;
