@@ -40,11 +40,18 @@ impl Game {
         let mut player = Player::new();
         player.pos = current_level.player_start;
 
+        let world_manager = WorldManager::init(SCALE);
+        let mut lighting_manager = LightingManager::new();
+        lighting_manager.bake_static_lights(
+            world_manager.get_active().bounds(),
+            &world_manager.get_active().static_lights,
+        );
+
         Self {
             assets: Assets::load().await,
-            world_manager: WorldManager::init(SCALE),
+            world_manager,
             audio_manager: AudioManager::load().await,
-            lighting_manager: LightingManager::new(),
+            lighting_manager,
             player,
             enemies: current_level.enemies.clone(),
             current_level,
@@ -207,9 +214,14 @@ impl Game {
                 // При смене локации сразу переносим камеру к игроку,
                 // чтобы она не проезжала через границы новой карты.
                 if self.current_level.map_id != previous_map {
-                    self.camera_manager
-                        .set_bounds(self.world_manager.get_active().bounds());
+                    let bounds = self.world_manager.get_active().bounds();
+                    self.camera_manager.set_bounds(bounds);
                     self.camera_manager.snap_to(self.player.pos);
+
+                    // Статический свет привязан к карте — запекаем его заново.
+                    let static_lights = &self.world_manager.get_active().static_lights;
+                    self.lighting_manager
+                        .bake_static_lights(bounds, static_lights);
                 }
             } else {
                 self.camera_manager.set_time_slow_active(false);
@@ -287,7 +299,6 @@ impl Game {
 
             self.lighting_manager.draw(
                 &self.camera_manager.camera,
-                &self.world_manager.get_active().static_lights,
                 self.player.pos,
                 &self.bullets,
                 self.camera_manager.time_slow.intensity,

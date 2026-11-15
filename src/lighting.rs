@@ -19,6 +19,10 @@ pub const MAP_STATIC_LIGHT_RADIUS: f32 = 500.0;
 pub const MAP_STATIC_LIGHT_INTENSITY: f32 = 1.0;
 pub const MAP_STATIC_LIGHT_FLICKER: f32 = 0.0;
 
+// Запечённая текстура статического света не должна превышать лимит GPU.
+// Для текущих карт масштаб остаётся 1:1 (одна мировая единица на тексель).
+const MAX_BAKE_SIZE: f32 = 4096.0;
+
 #[derive(Clone, Copy)]
 pub struct Light {
     pub pos: Vec2,
@@ -56,18 +60,19 @@ void main() {
 }
 "#;
 
-const BLOB_FRAGMENT_SHADER: &str = r#"#version 100
+// Цвет и интенсивность источника приходят через цвет вершин. Так все
+// динамические источники рисуются одним материалом и уходят в один батч.
+const LIGHT_FRAGMENT_SHADER: &str = r#"#version 100
 precision mediump float;
 
 varying mediump vec2 uv;
 varying mediump vec4 color;
-uniform vec4 u_light;
 
 void main() {
     float dist = length(uv - vec2(0.5)) * 2.0;
     float t = max(1.0 - dist, 0.0);
     float falloff = t * t * (3.0 - 2.0 * t);
-    gl_FragColor = vec4(u_light.rgb * u_light.a * falloff, 1.0) * color;
+    gl_FragColor = vec4(color.rgb * falloff, 1.0);
 }
 "#;
 
@@ -84,31 +89,45 @@ void main() {
 }
 "#;
 
+struct BakedStaticLight {
+    // RenderTarget хранится целиком: его удаление освобождает и color texture.
+    target: RenderTarget,
+    // Мировые границы, которые покрывает запечённая текстура.
+    bounds: Rect,
+}
+
 pub struct LightingManager {
     pub ambient_color: Color,
     pub enabled: bool,
     light_map: RenderTarget,
-    blob_material: Material,
+    light_material: Material,
+    static_material: Material,
     composite_material: Material,
+    baked_static_light: Option<BakedStaticLight>,
+    flickering_lights: Vec<Light>,
 }
 
 impl LightingManager {
     pub fn new() -> Self {
-        let blob_material = load_material(
+        let light_material = load_material(
             ShaderSource::Glsl {
                 vertex: LIGHT_VERTEX_SHADER,
-                fragment: BLOB_FRAGMENT_SHADER,
+                fragment: LIGHT_FRAGMENT_SHADER,
             },
             MaterialParams {
-                uniforms: vec![UniformDesc::new("u_light", UniformType::Float4)],
-                pipeline_params: PipelineParams {
-                    color_blend: Some(BlendState::new(
-                        Equation::Add,
-                        BlendFactor::One,
-                        BlendFactor::One,
-                    )),
-                    ..Default::default()
-                },
+                pipeline_params: additive_pipeline(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let static_material = load_material(
+            ShaderSource::Glsl {
+                vertex: LIGHT_VERTEX_SHADER,
+                fragment: COMPOSITE_FRAGMENT_SHADER,
+            },
+            MaterialParams {
+                pipeline_params: additive_pipeline(),
                 ..Default::default()
             },
         )
@@ -140,15 +159,61 @@ impl LightingManager {
             ambient_color: Color::new(0.16, 0.17, 0.24, 1.0),
             enabled: true,
             light_map: render_target(width, height),
-            blob_material,
+            light_material,
+            static_material,
             composite_material,
+            baked_static_light: None,
+            flickering_lights: Vec::new(),
         }
+    }
+
+    /// Запекает неподвижные источники света в мировую текстуру.
+    /// Вызывается при загрузке карты и при каждой смене локации.
+    pub fn bake_static_lights(&mut self, bounds: Rect, lights: &[Light]) {
+        self.flickering_lights.clear();
+
+        let mut baked = Vec::with_capacity(lights.len());
+        for &light in lights {
+            if light.flicker > 0.0 {
+                // Мерцающие источники нельзя запекать: они меняются каждый кадр.
+                self.flickering_lights.push(light);
+            } else {
+                baked.push(light);
+            }
+        }
+
+        if baked.is_empty() || bounds.w <= 0.0 || bounds.h <= 0.0 {
+            self.baked_static_light = None;
+            return;
+        }
+
+        let bake_scale = (MAX_BAKE_SIZE / bounds.w.max(bounds.h)).min(1.0);
+        let width = (bounds.w * bake_scale).ceil().max(1.0) as u32;
+        let height = (bounds.h * bake_scale).ceil().max(1.0) as u32;
+
+        let target = render_target(width, height);
+        target.texture.set_filter(FilterMode::Linear);
+
+        let mut camera = Camera2D::from_display_rect(bounds);
+        camera.render_target = Some(target.clone());
+
+        set_camera(&camera);
+        clear_background(Color::new(0.0, 0.0, 0.0, 0.0));
+
+        gl_use_material(&self.light_material);
+        for light in baked {
+            draw_light_quad(light.pos, light.radius, light_vertex_color(light, 0.0));
+        }
+        gl_use_default_material();
+
+        set_default_camera();
+
+        self.baked_static_light = Some(BakedStaticLight { target, bounds });
     }
 
     pub fn draw(
         &mut self,
         camera: &Camera2D,
-        static_lights: &[Light],
         player_pos: Vec2,
         bullets: &[Bullet],
         slow_intensity: f32,
@@ -169,13 +234,36 @@ impl LightingManager {
             slow_intensity,
         ));
 
-        for light in static_lights {
-            self.draw_light(&view, *light, time);
+        // Статический свет уже посчитан в мировой текстуре — один квад.
+        if let Some(baked) = &self.baked_static_light {
+            let top_left = view.to_screen(vec2(baked.bounds.x, baked.bounds.y));
+            let scale = view.world_to_screen_scale();
+
+            gl_use_material(&self.static_material);
+            draw_texture_ex(
+                &baked.target.texture,
+                top_left.x,
+                top_left.y,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(baked.bounds.w * scale, baked.bounds.h * scale)),
+                    flip_y: true,
+                    ..Default::default()
+                },
+            );
+            gl_use_default_material();
         }
-        self.draw_light(&view, player_light(player_pos, slow_intensity), time);
+
+        // Динамический свет: один материал и один батч на все источники.
+        gl_use_material(&self.light_material);
+        for light in self.flickering_lights.iter().copied() {
+            draw_light(&view, light, time);
+        }
+        draw_light(&view, player_light(player_pos, slow_intensity), time);
         for bullet in bullets {
-            self.draw_light(&view, bullet_light(bullet, slow_intensity), time);
+            draw_light(&view, bullet_light(bullet, slow_intensity), time);
         }
+        gl_use_default_material();
 
         set_default_camera();
         gl_use_material(&self.composite_material);
@@ -189,33 +277,6 @@ impl LightingManager {
                 flip_y: true,
                 ..Default::default()
             },
-        );
-        gl_use_default_material();
-    }
-
-    fn draw_light(&self, view: &ViewTransform, light: Light, time: f32) {
-        let center = view.to_screen(light.pos);
-        let radius = view.radius_to_screen(light.radius);
-        if !view.is_visible(center, radius) {
-            return;
-        }
-
-        self.blob_material.set_uniform(
-            "u_light",
-            [
-                light.color.r,
-                light.color.g,
-                light.color.b,
-                light.intensity * flicker_multiplier(light, time),
-            ],
-        );
-        gl_use_material(&self.blob_material);
-        draw_rectangle(
-            center.x - radius,
-            center.y - radius,
-            radius * 2.0,
-            radius * 2.0,
-            WHITE,
         );
         gl_use_default_material();
     }
@@ -237,6 +298,47 @@ impl LightingManager {
         camera.render_target = Some(self.light_map.clone());
         camera
     }
+}
+
+fn additive_pipeline() -> PipelineParams {
+    PipelineParams {
+        color_blend: Some(BlendState::new(
+            Equation::Add,
+            BlendFactor::One,
+            BlendFactor::One,
+        )),
+        ..Default::default()
+    }
+}
+
+fn draw_light(view: &ViewTransform, light: Light, time: f32) {
+    let center = view.to_screen(light.pos);
+    let radius = view.radius_to_screen(light.radius);
+    if !view.is_visible(center, radius) {
+        return;
+    }
+
+    draw_light_quad(center, radius, light_vertex_color(light, time));
+}
+
+fn draw_light_quad(center: Vec2, radius: f32, color: Color) {
+    draw_rectangle(
+        center.x - radius,
+        center.y - radius,
+        radius * 2.0,
+        radius * 2.0,
+        color,
+    );
+}
+
+fn light_vertex_color(light: Light, time: f32) -> Color {
+    let intensity = light.intensity * flicker_multiplier(light, time);
+    Color::new(
+        (light.color.r * intensity).clamp(0.0, 1.0),
+        (light.color.g * intensity).clamp(0.0, 1.0),
+        (light.color.b * intensity).clamp(0.0, 1.0),
+        1.0,
+    )
 }
 
 fn player_light(pos: Vec2, slow_intensity: f32) -> Light {
@@ -301,8 +403,12 @@ impl ViewTransform {
         )
     }
 
+    fn world_to_screen_scale(&self) -> f32 {
+        self.zoom.x * self.screen_size.x * 0.5
+    }
+
     fn radius_to_screen(&self, world_radius: f32) -> f32 {
-        world_radius * self.zoom.x * self.screen_size.x * 0.5
+        world_radius * self.world_to_screen_scale()
     }
 
     fn is_visible(&self, center: Vec2, radius: f32) -> bool {
