@@ -49,19 +49,22 @@ unsafe extern "C" {
 pub struct WebAudio;
 
 impl WebAudio {
-    pub fn new(sounds: &[StaticSoundData]) -> Option<Self> {
+    pub fn new(sounds: &[StaticSoundData]) -> Result<Self, String> {
         let sample_rate = unsafe { ds_audio_init() };
         if !sample_rate.is_finite() || sample_rate < 8000.0 {
-            return None;
+            return Err("не удалось инициализировать WebAudio".to_string());
         }
 
         for (id, sound) in sounds.iter().enumerate() {
-            upload(id, sound);
+            if let Err(error) = upload(id, sound) {
+                unsafe { ds_audio_shutdown() };
+                return Err(error);
+            }
         }
 
         unsafe { ds_audio_start() };
 
-        Some(Self)
+        Ok(Self)
     }
 
     pub fn play(&mut self, id: u32, rate: f64, gain: f32) {
@@ -91,11 +94,10 @@ impl Drop for WebAudio {
     }
 }
 
-fn upload(id: usize, sound: &StaticSoundData) {
+fn upload(id: usize, sound: &StaticSoundData) -> Result<(), String> {
     let frames = sound.frames.len();
     if frames == 0 {
-        eprintln!("звук {id} пустой");
-        return;
+        return Err(format!("звук {id} пустой"));
     }
 
     // Kira хранит стерео-фреймы; WebAudio ждёт interleaved PCM.
@@ -116,8 +118,10 @@ fn upload(id: usize, sound: &StaticSoundData) {
     };
 
     if uploaded == 0 {
-        eprintln!("не удалось загрузить звук {id} в WebAudio");
+        return Err(format!("не удалось загрузить звук {id} в WebAudio"));
     }
+
+    Ok(())
 }
 
 /// Версия JS-плагина, которую проверяет загрузчик miniquad.

@@ -91,12 +91,20 @@ impl SoundId {
     }
 }
 
-fn decode(bytes: &'static [u8]) -> StaticSoundData {
-    StaticSoundData::from_cursor(Cursor::new(bytes)).expect("не удалось декодировать звук")
+fn decode(bytes: &'static [u8]) -> Result<StaticSoundData, String> {
+    StaticSoundData::from_cursor(Cursor::new(bytes))
+        .map_err(|error| format!("не удалось декодировать звук: {error}"))
 }
 
-fn load_sounds() -> [StaticSoundData; SOUND_COUNT] {
-    SoundId::ALL.map(|id| decode(id.bytes()))
+fn load_sounds() -> Result<[StaticSoundData; SOUND_COUNT], String> {
+    let mut sounds = Vec::with_capacity(SOUND_COUNT);
+    for id in SoundId::ALL {
+        sounds.push(decode(id.bytes())?);
+    }
+
+    sounds
+        .try_into()
+        .map_err(|_| "не удалось загрузить все звуки".to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -174,7 +182,13 @@ fn load_kira_backend() -> Option<KiraBackend> {
         }
     };
 
-    let sounds = load_sounds();
+    let sounds = match load_sounds() {
+        Ok(sounds) => sounds,
+        Err(error) => {
+            eprintln!("звук отключён: {error}");
+            return None;
+        }
+    };
 
     Some(KiraBackend {
         loop_handle: None,
@@ -185,9 +199,21 @@ fn load_kira_backend() -> Option<KiraBackend> {
 
 #[cfg(target_arch = "wasm32")]
 fn load_web_backend() -> Option<crate::web_audio::WebAudio> {
-    let sounds = load_sounds();
+    let sounds = match load_sounds() {
+        Ok(sounds) => sounds,
+        Err(error) => {
+            eprintln!("звук отключён: {error}");
+            return None;
+        }
+    };
 
-    crate::web_audio::WebAudio::new(&sounds)
+    match crate::web_audio::WebAudio::new(&sounds) {
+        Ok(backend) => Some(backend),
+        Err(error) => {
+            eprintln!("звук отключён: {error}");
+            None
+        }
+    }
 }
 
 enum AudioBackend {
