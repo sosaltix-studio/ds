@@ -67,7 +67,7 @@ impl Player {
         world_manager: &WorldManager,
         dropped_weapons: &mut Vec<DroppedWeapon>,
         bullets: &mut Vec<Bullet>,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         last_shot_pos: &mut Option<Vec2>,
         enemies: &mut [Enemy],
         aim_world_pos: Vec2,
@@ -99,7 +99,7 @@ impl Player {
         &mut self,
         input: &GameInput,
         dt: f32,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         dropped_weapons: &mut Vec<DroppedWeapon>,
         enemies: &mut [Enemy],
     ) {
@@ -244,7 +244,7 @@ impl Player {
         input: &GameInput,
         dt: f32,
         bullets: &mut Vec<Bullet>,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         last_shot_pos: &mut Option<Vec2>,
     ) {
         if self.shoot_cooldown > 0.0 {

@@ -1,6 +1,10 @@
-use macroquad::audio::{
-    PlaySoundParams, Sound, load_sound_from_bytes, play_sound, set_sound_volume, stop_sound,
+#[cfg(not(target_arch = "wasm32"))]
+use kira::{
+    AudioManager as KiraAudioManager, AudioManagerSettings, Decibels, DefaultBackend,
+    sound::static_sound::{StaticSoundData, StaticSoundHandle},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Cursor;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GameSound {
@@ -13,6 +17,7 @@ pub enum GameSound {
     ShotgunReload,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl GameSound {
     const ALL: [GameSound; 7] = [
         GameSound::Ak47,
@@ -24,108 +29,144 @@ impl GameSound {
         GameSound::ShotgunReload,
     ];
 
-    fn normal_bytes(self) -> &'static [u8] {
+    fn bytes(self) -> &'static [u8] {
         match self {
-            GameSound::Ak47 => include_bytes!("../assets/sounds/ak47.wav"),
-            GameSound::Knife => include_bytes!("../assets/sounds/knife.wav"),
-            GameSound::Pipe => include_bytes!("../assets/sounds/pipe.wav"),
-            GameSound::Pistol => include_bytes!("../assets/sounds/pistol.wav"),
-            GameSound::Swosh => include_bytes!("../assets/sounds/swosh.wav"),
-            GameSound::Shotgun => include_bytes!("../assets/sounds/shotgun.wav"),
-            GameSound::ShotgunReload => include_bytes!("../assets/sounds/shotgun_reload.wav"),
-        }
-    }
-
-    fn slow_bytes(self) -> &'static [u8] {
-        match self {
-            GameSound::Ak47 => include_bytes!("../assets/sounds/slow/ak47.wav"),
-            GameSound::Knife => include_bytes!("../assets/sounds/slow/knife.wav"),
-            GameSound::Pipe => include_bytes!("../assets/sounds/slow/pipe.wav"),
-            GameSound::Pistol => include_bytes!("../assets/sounds/slow/pistol.wav"),
-            GameSound::Swosh => include_bytes!("../assets/sounds/slow/swosh.wav"),
-            GameSound::Shotgun => include_bytes!("../assets/sounds/slow/shotgun.wav"),
-            GameSound::ShotgunReload => include_bytes!("../assets/sounds/slow/shotgun_reload.wav"),
+            GameSound::Ak47 => include_bytes!("../assets/sounds/ak47.ogg"),
+            GameSound::Knife => include_bytes!("../assets/sounds/knife.ogg"),
+            GameSound::Pipe => include_bytes!("../assets/sounds/pipe.ogg"),
+            GameSound::Pistol => include_bytes!("../assets/sounds/pistol.ogg"),
+            GameSound::Swosh => include_bytes!("../assets/sounds/swosh.ogg"),
+            GameSound::Shotgun => include_bytes!("../assets/sounds/shotgun.ogg"),
+            GameSound::ShotgunReload => include_bytes!("../assets/sounds/shotgun_reload.ogg"),
         }
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 const SOUND_COUNT: usize = GameSound::ALL.len();
 
+#[cfg(not(target_arch = "wasm32"))]
+const SLOW_PLAYBACK_RATE: f64 = 0.4;
+
+#[cfg(not(target_arch = "wasm32"))]
 const TIME_ENTER_VOLUME: f32 = 0.6;
+#[cfg(not(target_arch = "wasm32"))]
 const TIME_LOOP_VOLUME: f32 = 0.35;
 const TIME_LOOP_FADE_IN: f32 = 0.15;
 const TIME_LOOP_FADE_OUT: f32 = 0.25;
+#[cfg(not(target_arch = "wasm32"))]
 const TIME_EXIT_VOLUME: f32 = 0.5;
 
 const DUCK_VOLUME: f32 = 0.45;
 const DUCK_SPEED: f32 = 6.0;
 
+#[cfg(not(target_arch = "wasm32"))]
+struct DesktopAudio {
+    manager: KiraAudioManager<DefaultBackend>,
+    sounds: [StaticSoundData; SOUND_COUNT],
+    time_enter: StaticSoundData,
+    time_loop: StaticSoundData,
+    time_exit: StaticSoundData,
+    time_loop_handle: Option<StaticSoundHandle>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl DesktopAudio {
+    fn load() -> Result<Self, String> {
+        let manager = KiraAudioManager::new(AudioManagerSettings::default())
+            .map_err(|error| format!("не удалось запустить аудиовыход: {error}"))?;
+
+        let sounds = std::array::from_fn(|index| decode(GameSound::ALL[index].bytes()));
+
+        Ok(Self {
+            manager,
+            sounds,
+            time_enter: decode(include_bytes!("../assets/sounds/time_enter.ogg")),
+            time_loop: decode(include_bytes!("../assets/sounds/time_loop.ogg")),
+            time_exit: decode(include_bytes!("../assets/sounds/time_exit.ogg")),
+            time_loop_handle: None,
+        })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn decode(bytes: &'static [u8]) -> StaticSoundData {
+    StaticSoundData::from_cursor(Cursor::new(bytes)).expect("не удалось декодировать звук")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn gain_to_db(gain: f32) -> Decibels {
+    if gain <= 0.0 {
+        Decibels::SILENCE
+    } else {
+        Decibels((20.0 * gain.log10()).max(Decibels::SILENCE.0))
+    }
+}
+
 pub struct AudioManager {
-    sounds: [Sound; SOUND_COUNT],
-    slow_sounds: [Sound; SOUND_COUNT],
-    pub sound_time_enter: Sound,
-    pub sound_time_loop: Sound,
-    pub sound_time_exit: Sound,
     pub volume: f32,
     duck: f32,
-    slow_playback: bool,
     time_loop_playing: bool,
     time_loop_fade: f32,
+    #[cfg(not(target_arch = "wasm32"))]
+    slow_playback: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    desktop: Option<DesktopAudio>,
 }
 
 impl AudioManager {
     pub async fn load() -> Self {
-        let mut sounds = Vec::with_capacity(SOUND_COUNT);
-        let mut slow_sounds = Vec::with_capacity(SOUND_COUNT);
-        for sound in GameSound::ALL {
-            sounds.push(load_sound_from_bytes(sound.normal_bytes()).await.unwrap());
-            slow_sounds.push(load_sound_from_bytes(sound.slow_bytes()).await.unwrap());
-        }
-
-        let sound_time_enter =
-            load_sound_from_bytes(include_bytes!("../assets/sounds/time_enter.wav"))
-                .await
-                .unwrap();
-        let sound_time_loop =
-            load_sound_from_bytes(include_bytes!("../assets/sounds/time_loop.wav"))
-                .await
-                .unwrap();
-        let sound_time_exit =
-            load_sound_from_bytes(include_bytes!("../assets/sounds/time_exit.wav"))
-                .await
-                .unwrap();
+        #[cfg(not(target_arch = "wasm32"))]
+        let desktop = match DesktopAudio::load() {
+            Ok(desktop) => Some(desktop),
+            Err(error) => {
+                eprintln!("звук отключён: {error}");
+                None
+            }
+        };
 
         Self {
-            sounds: sounds.try_into().unwrap(),
-            slow_sounds: slow_sounds.try_into().unwrap(),
-            sound_time_enter,
-            sound_time_loop,
-            sound_time_exit,
             volume: 0.5,
             duck: 1.0,
-            slow_playback: false,
             time_loop_playing: false,
             time_loop_fade: 0.0,
+            #[cfg(not(target_arch = "wasm32"))]
+            slow_playback: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            desktop,
         }
     }
 
-    pub fn play(&self, sound: GameSound) {
-        let source = if self.slow_playback {
-            &self.slow_sounds[sound as usize]
-        } else {
-            &self.sounds[sound as usize]
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn play(&mut self, sound: GameSound) {
+        let gain = self.volume * self.duck;
+        if gain <= 0.0 {
+            return;
+        }
+
+        let Some(desktop) = &mut self.desktop else {
+            return;
         };
 
-        let volume = self.volume * self.duck;
-        if volume > 0.0 {
-            play_sound(
-                source,
-                PlaySoundParams {
-                    looped: false,
-                    volume,
-                },
-            );
+        let playback_rate = if self.slow_playback {
+            SLOW_PLAYBACK_RATE
+        } else {
+            1.0
+        };
+
+        let data = desktop.sounds[sound as usize]
+            .clone()
+            .playback_rate(playback_rate)
+            .volume(gain_to_db(gain));
+
+        if let Err(error) = desktop.manager.play(data) {
+            eprintln!("не удалось проиграть звук: {error}");
         }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn play(&mut self, _sound: GameSound) {
+        // В браузерной сборке звук пока отключён.
     }
 
     pub fn set_volume(&mut self, volume: f32) {
@@ -133,7 +174,10 @@ impl AudioManager {
     }
 
     pub fn update(&mut self, real_dt: f32, time_slow_active: bool) {
-        self.slow_playback = time_slow_active;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.slow_playback = time_slow_active;
+        }
 
         let duck_target = if time_slow_active { DUCK_VOLUME } else { 1.0 };
         let duck_step = (DUCK_SPEED * real_dt).min(1.0);
@@ -144,46 +188,72 @@ impl AudioManager {
                 self.time_loop_playing = true;
                 self.time_loop_fade = 0.0;
 
-                play_sound(
-                    &self.sound_time_enter,
-                    PlaySoundParams {
-                        looped: false,
-                        volume: TIME_ENTER_VOLUME * self.volume,
-                    },
-                );
-                play_sound(
-                    &self.sound_time_loop,
-                    PlaySoundParams {
-                        looped: true,
-                        volume: 0.0,
-                    },
-                );
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(desktop) = &mut self.desktop {
+                    let enter = desktop
+                        .time_enter
+                        .clone()
+                        .volume(gain_to_db(TIME_ENTER_VOLUME * self.volume));
+                    if let Err(error) = desktop.manager.play(enter) {
+                        eprintln!("не удалось проиграть звук входа в замедление: {error}");
+                    }
+
+                    let looped = desktop
+                        .time_loop
+                        .clone()
+                        .loop_region(0.0..)
+                        .volume(Decibels::SILENCE);
+                    match desktop.manager.play(looped) {
+                        Ok(handle) => desktop.time_loop_handle = Some(handle),
+                        Err(error) => {
+                            eprintln!("не удалось запустить луп замедления: {error}")
+                        }
+                    }
+                }
             }
 
             self.time_loop_fade = (self.time_loop_fade + real_dt / TIME_LOOP_FADE_IN).min(1.0);
-            set_sound_volume(
-                &self.sound_time_loop,
-                TIME_LOOP_VOLUME * self.time_loop_fade * self.volume,
-            );
+
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(desktop) = &mut self.desktop {
+                if let Some(handle) = &mut desktop.time_loop_handle {
+                    handle.set_volume(
+                        gain_to_db(TIME_LOOP_VOLUME * self.time_loop_fade * self.volume),
+                        kira::Tween::default(),
+                    );
+                }
+            }
         } else if self.time_loop_playing {
             self.time_loop_fade -= real_dt / TIME_LOOP_FADE_OUT;
 
             if self.time_loop_fade <= 0.0 {
                 self.time_loop_playing = false;
                 self.time_loop_fade = 0.0;
-                stop_sound(&self.sound_time_loop);
-                play_sound(
-                    &self.sound_time_exit,
-                    PlaySoundParams {
-                        looped: false,
-                        volume: TIME_EXIT_VOLUME * self.volume,
-                    },
-                );
+
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(desktop) = &mut self.desktop {
+                    if let Some(mut handle) = desktop.time_loop_handle.take() {
+                        handle.stop(kira::Tween::default());
+                    }
+
+                    let exit = desktop
+                        .time_exit
+                        .clone()
+                        .volume(gain_to_db(TIME_EXIT_VOLUME * self.volume));
+                    if let Err(error) = desktop.manager.play(exit) {
+                        eprintln!("не удалось проиграть звук выхода из замедления: {error}");
+                    }
+                }
             } else {
-                set_sound_volume(
-                    &self.sound_time_loop,
-                    TIME_LOOP_VOLUME * self.time_loop_fade * self.volume,
-                );
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(desktop) = &mut self.desktop {
+                    if let Some(handle) = &mut desktop.time_loop_handle {
+                        handle.set_volume(
+                            gain_to_db(TIME_LOOP_VOLUME * self.time_loop_fade * self.volume),
+                            kira::Tween::default(),
+                        );
+                    }
+                }
             }
         }
     }

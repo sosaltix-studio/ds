@@ -123,7 +123,7 @@ impl Game {
                     &self.world_manager,
                     &mut self.dropped_weapons,
                     &mut self.bullets,
-                    &self.audio_manager,
+                    &mut self.audio_manager,
                     &mut self.last_shot_pos,
                     &mut self.enemies,
                     self.input.aim_world_pos,
@@ -176,7 +176,7 @@ impl Game {
                         &mut self.dropped_weapons,
                         &mut self.bullets,
                         dt,
-                        &self.audio_manager,
+                        &mut self.audio_manager,
                     );
                 }
 
