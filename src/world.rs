@@ -220,37 +220,68 @@ impl Game {
                 self.audio_manager.update(frame_dt, false);
             }
 
+            if self.player.is_dead {
+                if self.input.restart_pressed {
+                    self.restart(self.input.raw_aim_world_pos);
+                }
+            }
+            self.ui_manager.update(&mut self.audio_manager, &self.input);
+        }
+    }
+
+    fn draw_world(&self) {
+        self.world_manager.draw();
+
+        self.blood_pools.draw();
+
+        self.time_fx.draw_rings();
+    }
+
+    fn draw_entities(&self) {
+        for enemy in self.enemies.iter().filter(|e| e.is_dead) {
+            enemy.draw(&self.assets);
+        }
+
+        if self.player.is_dead {
+            self.player.draw(&self.assets);
+        }
+
+        let slow_intensity = self.camera_manager.time_slow.intensity;
+        for bullet in &self.bullets {
+            if slow_intensity > 0.001 {
+                bullet.draw_traced(60.0 * slow_intensity, slow_intensity);
+            } else {
+                bullet.draw();
+            }
+        }
+
+        for enemy in self.enemies.iter().filter(|e| !e.is_dead) {
+            enemy.draw(&self.assets);
+        }
+
+        for item in &self.dropped_weapons {
+            item.draw(&self.assets);
+        }
+
+        self.time_fx.draw_ghosts(&self.assets);
+        if !self.player.is_dead {
+            self.player.draw(&self.assets);
+        }
+    }
+
+    pub fn draw(&mut self) {
+        if self.ui_manager.game_state == GameState::Terminal {
+            self.ui_manager.draw(&self.assets);
+        } else {
             clear_background(BLACK);
 
             set_camera(&self.camera_manager.camera);
 
             self.camera_manager.begin_render();
 
-            self.world_manager.draw();
+            self.draw_world();
 
-            // Кровь лежит на полу — под трупами и остальными объектами
-            self.blood_pools.draw();
-
-            self.time_fx.draw_rings();
-
-            let slow_intensity = self.camera_manager.time_slow.intensity;
-            for bullet in &self.bullets {
-                if slow_intensity > 0.01 {
-                    bullet.draw_traced(60.0 * slow_intensity, slow_intensity);
-                } else {
-                    bullet.draw();
-                }
-            }
-            for enemy in &self.enemies {
-                enemy.draw(&self.assets);
-            }
-            for item in &self.dropped_weapons {
-                item.draw(&self.assets);
-            }
-
-            self.time_fx.draw_ghosts(&self.assets);
-
-            self.player.draw(&self.assets);
+            self.draw_entities();
 
             self.camera_manager.end_render();
 
@@ -261,7 +292,7 @@ impl Game {
                 &self.world_manager.get_active().static_lights,
                 self.player.pos,
                 &self.bullets,
-                slow_intensity,
+                self.camera_manager.time_slow.intensity,
             );
 
             draw_ui(&self.assets, &self.player);
@@ -269,14 +300,10 @@ impl Game {
             draw_time_slow_hud(&self.assets, &self.player);
 
             self.ui_manager.draw(&self.assets);
+        }
 
-            if self.player.is_dead {
-                draw_dead_menu(&self.assets);
-                if self.input.restart_pressed {
-                    self.restart(self.input.raw_aim_world_pos);
-                }
-            }
-            self.ui_manager.update(&mut self.audio_manager, &self.input);
+        if self.player.is_dead {
+            draw_dead_menu(&self.assets);
         }
 
         if self.virtual_cursor.is_locked() {

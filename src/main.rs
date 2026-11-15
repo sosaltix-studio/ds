@@ -68,6 +68,8 @@ async fn main() {
     loop {
         game.update();
 
+        game.draw();
+
         next_frame().await;
     }
 }

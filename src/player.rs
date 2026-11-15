@@ -11,23 +11,23 @@ pub const TIME_SLOW_SPEED_MULT: f32 = 2.0;
 
 // Структура игрока
 pub struct Player {
-    pub pos: Vec2,
     pub speed: f32,
-    pub ability_active: bool,
     pub ability_charge: f32,
     pub rotation: f32,
     pub legs_rotation: f32,
-    pub torso_anim: AnimationState,
-    pub legs_anim: AnimationState,
-    pub is_moving: bool,
-    pub weapon: Weapon,
-    pub ammo: u32,
-    pub is_attacking: bool,
-    pub is_dead: bool,
     pub shoot_cooldown: f32,
     pub attack_timer: f32,
+    pub ammo: u32,
+    pub ability_active: bool,
+    pub is_moving: bool,
+    pub is_attacking: bool,
+    pub is_dead: bool,
     pub is_executing: bool,
+    pub torso_anim: AnimationState,
+    pub legs_anim: AnimationState,
+    pub pos: Vec2,
     pub execution_orig_pos: Vec2,
+    pub weapon: Weapon,
     pub executing_enemy_idx: Option<usize>,
 }
 
@@ -372,7 +372,7 @@ impl Player {
     }
 
     // Отрисовка игрока
-    pub fn draw(&mut self, assets: &Assets) {
+    pub fn draw(&self, assets: &Assets) {
         draw_char(
             &assets.player,
             self.pos,
