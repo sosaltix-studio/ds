@@ -281,12 +281,12 @@ impl Game {
 
     pub fn draw(&mut self) {
         if self.ui_manager.game_state == GameState::Terminal {
+            // В терминале сцена не рисуется, камера нужна только для UI.
+            set_default_camera();
             self.ui_manager.draw(&self.assets);
         } else {
-            clear_background(BLACK);
-
-            set_camera(&self.camera_manager.camera);
-
+            // begin_render сам ставит игровую камеру и чистит текущую цель:
+            // экран без пост-эффектов или scene target при их наличии.
             self.camera_manager.begin_render();
 
             self.draw_world();
@@ -294,8 +294,6 @@ impl Game {
             self.draw_entities();
 
             self.camera_manager.end_render();
-
-            set_default_camera();
 
             self.lighting_manager.draw(
                 &self.camera_manager.camera,

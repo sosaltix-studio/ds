@@ -310,8 +310,6 @@ impl UiManager {
     }
 
     fn draw_terminal(&mut self, assets: &Assets) {
-        set_default_camera();
-
         self.ensure_terminal_target();
         if self.terminal_dirty {
             self.redraw_terminal_cache(assets);
@@ -437,7 +435,6 @@ pub fn draw_ui(assets: &Assets, player: &Player, ammo_text: &str) {
         player.weapon,
         Weapon::Pistol | Weapon::Rifle | Weapon::Shotgun
     ) {
-        set_default_camera();
         draw_ui_text(
             &assets.font,
             ammo_text,
@@ -450,8 +447,6 @@ pub fn draw_ui(assets: &Assets, player: &Player, ammo_text: &str) {
 }
 
 pub fn draw_time_slow_hud(assets: &Assets, charge_text: &str) {
-    set_default_camera();
-
     draw_ui_text(
         &assets.font,
         charge_text,
@@ -463,8 +458,6 @@ pub fn draw_time_slow_hud(assets: &Assets, charge_text: &str) {
 }
 
 pub fn draw_pause_menu(assets: &Assets, selected_idx: usize) {
-    set_default_camera();
-
     draw_rectangle(
         0.0,
         0.0,
@@ -502,8 +495,6 @@ pub fn draw_pause_menu(assets: &Assets, selected_idx: usize) {
 }
 
 pub fn draw_dead_menu(assets: &Assets) {
-    set_default_camera();
-
     draw_rectangle(
         screen_width() / 2.0 - 200.0,
         screen_height() / 2.0 - 50.0,
