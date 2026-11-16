@@ -14,7 +14,6 @@ pub enum Weapon {
     Pistol,
     Rifle,
     Shotgun,
-    Dead,
 }
 
 impl Weapon {
@@ -26,7 +25,6 @@ impl Weapon {
             Weapon::Pistol => (PISTOL_ROW, PISTOL_FRAMES, 12.0),
             Weapon::Rifle => (RIFLE_ROW, RIFLE_FRAMES, 14.0),
             Weapon::Shotgun => (SHOTGUN_ROW, SHOTGUN_FRAMES, 12.0),
-            Weapon::Dead => (DEAD_ROW, DEAD_FRAMES, 14.0),
         }
     }
 
@@ -129,7 +127,10 @@ pub fn update_bullets(
             match bullet.owner {
                 BulletOwner::Player => {
                     for enemy in enemies.iter_mut() {
-                        if !enemy.is_dead && bullet.collider().overlaps(&enemy.collider()) {
+                        if !enemy.is_dead
+                            && !enemy.is_knock
+                            && bullet.collider().overlaps(&enemy.collider())
+                        {
                             enemy.die(dropped_weapons, DeathCause::Firearm);
                             return false;
                         }

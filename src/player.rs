@@ -11,23 +11,23 @@ pub const TIME_SLOW_SPEED_MULT: f32 = 2.0;
 
 // Структура игрока
 pub struct Player {
-    pub pos: Vec2,
     pub speed: f32,
-    pub ability_active: bool,
     pub ability_charge: f32,
     pub rotation: f32,
     pub legs_rotation: f32,
-    pub torso_anim: AnimationState,
-    pub legs_anim: AnimationState,
-    pub is_moving: bool,
-    pub weapon: Weapon,
-    pub ammo: u32,
-    pub is_attacking: bool,
-    pub is_dead: bool,
     pub shoot_cooldown: f32,
     pub attack_timer: f32,
+    pub ammo: u32,
+    pub ability_active: bool,
+    pub is_moving: bool,
+    pub is_attacking: bool,
+    pub is_dead: bool,
     pub is_executing: bool,
+    pub torso_anim: AnimationState,
+    pub legs_anim: AnimationState,
+    pub pos: Vec2,
     pub execution_orig_pos: Vec2,
+    pub weapon: Weapon,
     pub executing_enemy_idx: Option<usize>,
 }
 
@@ -67,7 +67,7 @@ impl Player {
         world_manager: &WorldManager,
         dropped_weapons: &mut Vec<DroppedWeapon>,
         bullets: &mut Vec<Bullet>,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         last_shot_pos: &mut Option<Vec2>,
         enemies: &mut [Enemy],
         aim_world_pos: Vec2,
@@ -99,7 +99,7 @@ impl Player {
         &mut self,
         input: &GameInput,
         dt: f32,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         dropped_weapons: &mut Vec<DroppedWeapon>,
         enemies: &mut [Enemy],
     ) {
@@ -136,27 +136,36 @@ impl Player {
 
         if input.execute_pressed && !self.is_attacking {
             let can_execute = matches!(self.weapon, Weapon::Fists | Weapon::Pipe | Weapon::Knife);
-            if can_execute {
-                if let Some(idx) = enemies.iter().position(|e| {
-                    !e.is_dead && e.is_knock && self.pos.distance(e.pos) <= ATTACK_RADIUS
-                }) {
-                    self.is_executing = true;
-                    self.execution_orig_pos = self.pos;
-                    self.executing_enemy_idx = Some(idx);
+            if !can_execute {
+                dropped_weapons.push(DroppedWeapon::new(
+                    self.pos,
+                    self.weapon,
+                    self.ammo,
+                    self.rotation,
+                ));
+                self.weapon = Weapon::Fists;
+            }
 
-                    self.pos = enemies[idx].pos;
-                    self.rotation = enemies[idx].rotation;
+            if let Some(idx) = enemies
+                .iter()
+                .position(|e| !e.is_dead && e.is_knock && self.pos.distance(e.pos) <= ATTACK_RADIUS)
+            {
+                self.is_executing = true;
+                self.execution_orig_pos = self.pos;
+                self.executing_enemy_idx = Some(idx);
 
-                    let (exec_row, exec_frames, exec_fps) = match self.weapon {
-                        Weapon::Pipe => (EXECUTE_PIPE_ROW, EXECUTE_PIPE_FRAMES, 10.0),
-                        Weapon::Knife => (EXECUTE_KNIFE_ROW, EXECUTE_KNIFE_FRAMES, 10.0),
-                        Weapon::Fists => (EXECUTE_FISTS_ROW, EXECUTE_FISTS_FRAMES, 12.0),
-                        _ => (PUNCH_ROW, 1, 1.0),
-                    };
+                self.pos = enemies[idx].pos;
+                self.rotation = enemies[idx].rotation;
 
-                    self.torso_anim.set_state(exec_row, exec_frames, exec_fps);
-                    return;
-                }
+                let (exec_row, exec_frames, exec_fps) = match self.weapon {
+                    Weapon::Pipe => (EXECUTE_PIPE_ROW, EXECUTE_PIPE_FRAMES, 10.0),
+                    Weapon::Knife => (EXECUTE_KNIFE_ROW, EXECUTE_KNIFE_FRAMES, 10.0),
+                    Weapon::Fists => (EXECUTE_FISTS_ROW, EXECUTE_FISTS_FRAMES, 12.0),
+                    _ => (PUNCH_ROW, 1, 1.0),
+                };
+
+                self.torso_anim.set_state(exec_row, exec_frames, exec_fps);
+                return;
             }
         }
     }
@@ -235,7 +244,7 @@ impl Player {
         input: &GameInput,
         dt: f32,
         bullets: &mut Vec<Bullet>,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         last_shot_pos: &mut Option<Vec2>,
     ) {
         if self.shoot_cooldown > 0.0 {
@@ -372,7 +381,7 @@ impl Player {
     }
 
     // Отрисовка игрока
-    pub fn draw(&mut self, assets: &Assets) {
+    pub fn draw(&self, assets: &Assets) {
         draw_char(
             &assets.player,
             self.pos,

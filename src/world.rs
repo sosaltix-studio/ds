@@ -40,11 +40,18 @@ impl Game {
         let mut player = Player::new();
         player.pos = current_level.player_start;
 
+        let world_manager = WorldManager::init(SCALE);
+        let mut lighting_manager = LightingManager::new();
+        lighting_manager.bake_static_lights(
+            world_manager.get_active().bounds(),
+            &world_manager.get_active().static_lights,
+        );
+
         Self {
             assets: Assets::load().await,
-            world_manager: WorldManager::init(SCALE),
+            world_manager,
             audio_manager: AudioManager::load().await,
-            lighting_manager: LightingManager::new(),
+            lighting_manager,
             player,
             enemies: current_level.enemies.clone(),
             current_level,
@@ -107,8 +114,6 @@ impl Game {
 
         if self.ui_manager.game_state == GameState::Terminal {
             self.ui_manager.update(&mut self.audio_manager, &self.input);
-            self.ui_manager.draw(&self.assets);
-
             self.audio_manager.update(frame_dt, false);
         } else {
             if self.ui_manager.game_state == GameState::Playing {
@@ -123,7 +128,7 @@ impl Game {
                     &self.world_manager,
                     &mut self.dropped_weapons,
                     &mut self.bullets,
-                    &self.audio_manager,
+                    &mut self.audio_manager,
                     &mut self.last_shot_pos,
                     &mut self.enemies,
                     self.input.aim_world_pos,
@@ -176,7 +181,7 @@ impl Game {
                         &mut self.dropped_weapons,
                         &mut self.bullets,
                         dt,
-                        &self.audio_manager,
+                        &mut self.audio_manager,
                     );
                 }
 
@@ -209,9 +214,14 @@ impl Game {
                 // При смене локации сразу переносим камеру к игроку,
                 // чтобы она не проезжала через границы новой карты.
                 if self.current_level.map_id != previous_map {
-                    self.camera_manager
-                        .set_bounds(self.world_manager.get_active().bounds());
+                    let bounds = self.world_manager.get_active().bounds();
+                    self.camera_manager.set_bounds(bounds);
                     self.camera_manager.snap_to(self.player.pos);
+
+                    // Статический свет привязан к карте — запекаем его заново.
+                    let static_lights = &self.world_manager.get_active().static_lights;
+                    self.lighting_manager
+                        .bake_static_lights(bounds, static_lights);
                 }
             } else {
                 self.camera_manager.set_time_slow_active(false);
@@ -220,63 +230,90 @@ impl Game {
                 self.audio_manager.update(frame_dt, false);
             }
 
-            clear_background(BLACK);
-
-            set_camera(&self.camera_manager.camera);
-
-            self.camera_manager.begin_render();
-
-            self.world_manager.draw();
-
-            // Кровь лежит на полу — под трупами и остальными объектами
-            self.blood_pools.draw();
-
-            self.time_fx.draw_rings();
-
-            let slow_intensity = self.camera_manager.time_slow.intensity;
-            for bullet in &self.bullets {
-                if slow_intensity > 0.01 {
-                    bullet.draw_traced(60.0 * slow_intensity, slow_intensity);
-                } else {
-                    bullet.draw();
-                }
-            }
-            for enemy in &self.enemies {
-                enemy.draw(&self.assets);
-            }
-            for item in &self.dropped_weapons {
-                item.draw(&self.assets);
-            }
-
-            self.time_fx.draw_ghosts(&self.assets);
-
-            self.player.draw(&self.assets);
-
-            self.camera_manager.end_render();
-
-            set_default_camera();
-
-            self.lighting_manager.draw(
-                &self.camera_manager.camera,
-                &self.world_manager.get_active().static_lights,
-                self.player.pos,
-                &self.bullets,
-                slow_intensity,
-            );
-
-            draw_ui(&self.assets, &self.player);
-
-            draw_time_slow_hud(&self.assets, &self.player);
-
-            self.ui_manager.draw(&self.assets);
-
             if self.player.is_dead {
-                draw_dead_menu(&self.assets);
                 if self.input.restart_pressed {
                     self.restart(self.input.raw_aim_world_pos);
                 }
             }
             self.ui_manager.update(&mut self.audio_manager, &self.input);
+        }
+    }
+
+    fn draw_world(&self) {
+        self.world_manager.draw();
+
+        self.blood_pools.draw();
+
+        self.time_fx.draw_rings();
+    }
+
+    fn draw_entities(&self) {
+        for enemy in self.enemies.iter().filter(|e| e.is_dead) {
+            enemy.draw(&self.assets);
+        }
+
+        if self.player.is_dead {
+            self.player.draw(&self.assets);
+        }
+
+        let slow_intensity = self.camera_manager.time_slow.intensity;
+        for bullet in &self.bullets {
+            if slow_intensity > 0.001 {
+                bullet.draw_traced(60.0 * slow_intensity, slow_intensity);
+            } else {
+                bullet.draw();
+            }
+        }
+
+        for enemy in self.enemies.iter().filter(|e| !e.is_dead) {
+            enemy.draw(&self.assets);
+        }
+
+        for item in &self.dropped_weapons {
+            item.draw(&self.assets);
+        }
+
+        self.time_fx.draw_ghosts(&self.assets);
+        if !self.player.is_dead {
+            self.player.draw(&self.assets);
+        }
+    }
+
+    pub fn draw(&mut self) {
+        if self.ui_manager.game_state == GameState::Terminal {
+            // В терминале сцена не рисуется, камера нужна только для UI.
+            set_default_camera();
+            self.ui_manager.draw(&self.assets);
+        } else {
+            // begin_render сам ставит игровую камеру и чистит текущую цель:
+            // экран без пост-эффектов или scene target при их наличии.
+            self.camera_manager.begin_render();
+
+            self.draw_world();
+
+            self.draw_entities();
+
+            self.camera_manager.end_render();
+
+            self.lighting_manager.draw(
+                &self.camera_manager.camera,
+                self.player.pos,
+                &self.bullets,
+                self.camera_manager.time_slow.intensity,
+            );
+
+            self.ui_manager
+                .update_hud_text(self.player.ammo, self.player.ability_charge);
+
+            draw_ui(&self.assets, &self.player, self.ui_manager.ammo_text());
+
+            draw_time_slow_hud(&self.assets, self.ui_manager.charge_text());
+
+            self.ui_manager.draw(&self.assets);
+        }
+
+        if self.player.is_dead {
+            draw_dead_menu(&self.assets);
         }
 
         if self.virtual_cursor.is_locked() {

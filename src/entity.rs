@@ -51,7 +51,6 @@ pub const LEGS_ROW: usize = 6;
 pub const LEGS_FRAMES: usize = 14;
 
 pub const DEAD_ROW: usize = 7;
-pub const DEAD_FRAMES: usize = 6;
 
 // Причина смерти выбирает пару кадров трупа в DEAD_ROW
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,11 +202,9 @@ pub fn char_die(
     *is_attacking = false;
     *is_dead = true;
 
-    if *weapon != Weapon::Fists && *weapon != Weapon::Dead {
+    if *weapon != Weapon::Fists {
         dropped_weapons.push(DroppedWeapon::new(pos, *weapon, ammo, rotation));
     }
-
-    *weapon = Weapon::Dead;
 
     // Труп не анимируется: фиксируем один случайный кадр под причину смерти
     torso_anim.set_state(DEAD_ROW, 1, 1.0);

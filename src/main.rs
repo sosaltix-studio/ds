@@ -29,6 +29,9 @@ mod blood;
 
 mod audio;
 
+#[cfg(target_arch = "wasm32")]
+mod web_audio;
+
 mod effect;
 
 mod time_fx;
@@ -67,6 +70,8 @@ async fn main() {
     // Главный игровой цикл
     loop {
         game.update();
+
+        game.draw();
 
         next_frame().await;
     }

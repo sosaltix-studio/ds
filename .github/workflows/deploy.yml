@@ -34,6 +34,7 @@ jobs:
           mkdir -p dist
           cp target/wasm32-unknown-unknown/release/ds.wasm dist/
           cp index.html dist/
+          cp web_audio.js dist/
           curl -sSL https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js -o dist/mq_js_bundle.js
 
       - name: Upload Pages Artifact

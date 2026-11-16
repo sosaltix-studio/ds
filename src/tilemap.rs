@@ -1,9 +1,9 @@
-use crate::SCALE;
 use crate::lighting::{
     Light, MAP_STATIC_LIGHT_COLOR, MAP_STATIC_LIGHT_FLICKER, MAP_STATIC_LIGHT_INTENSITY,
     MAP_STATIC_LIGHT_RADIUS, lamp,
 };
 use macroquad::prelude::*;
+use serde::Deserialize;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
@@ -13,9 +13,23 @@ pub enum MapId {
     Level1_1 = 1,
 }
 
+// Минимум данных из Tiled, которые нужны игре: коллизии и источники света.
+#[derive(Default, Deserialize)]
+struct TiledMap {
+    #[serde(default)]
+    layers: Vec<TiledLayer>,
+}
+
+#[derive(Default, Deserialize)]
+struct TiledLayer {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    data: Vec<u64>,
+}
+
 struct MapConfig {
     json_str: &'static str,
-    atlas_bytes: &'static [u8],
     texture_bytes: &'static [u8],
     width: usize,
     height: usize,
@@ -43,9 +57,6 @@ impl TilemapManager {
         let bg_texture = Texture2D::from_file_with_format(config.texture_bytes, None);
         bg_texture.set_filter(FilterMode::Nearest);
 
-        let texture = Texture2D::from_file_with_format(config.atlas_bytes, None);
-        texture.set_filter(FilterMode::Nearest);
-
         let map_w = config.width as f32 * config.tile_w * scale;
         let map_h = config.height as f32 * config.tile_h * scale;
         let map_rect = Rect::new(0.0, 0.0, map_w, map_h);
@@ -56,18 +67,17 @@ impl TilemapManager {
         let grid_len = config.width * config.height;
         let mut collision_grid = vec![false; grid_len];
 
-        if let Ok(tiled_json) = serde_json::from_str::<serde_json::Value>(config.json_str) {
-            if let Some(layers) = tiled_json["layers"].as_array() {
-                for layer in layers {
-                    if layer["name"] == "Collisions" {
-                        if let Some(data) = layer["data"].as_array() {
-                            for (index, val) in data.iter().enumerate() {
-                                if val.as_u64().unwrap_or(0) != 0 && index < collision_grid.len() {
-                                    collision_grid[index] = true;
-                                }
-                            }
-                        }
-                    }
+        // Карта разбирается один раз: коллизии и источники света берутся
+        // из одного и того же дерева JSON.
+        let tiled_map: TiledMap = serde_json::from_str(config.json_str).unwrap_or_default();
+
+        for layer in &tiled_map.layers {
+            if layer.name != "Collisions" {
+                continue;
+            }
+            for (index, &tile_id) in layer.data.iter().enumerate() {
+                if tile_id != 0 && index < grid_len {
+                    collision_grid[index] = true;
                 }
             }
         }
@@ -115,30 +125,22 @@ impl TilemapManager {
         }
 
         let mut static_lights: Vec<Light> = Vec::new();
-        if let Ok(tiled_json) = serde_json::from_str::<serde_json::Value>(config.json_str) {
-            if let Some(layers) = tiled_json["layers"].as_array() {
-                for layer in layers {
-                    let name = layer["name"].as_str().unwrap_or("");
-                    if name.eq_ignore_ascii_case("Lighting") || name.eq_ignore_ascii_case("Lights")
-                    {
-                        if let Some(data) = layer["data"].as_array() {
-                            for (index, val) in data.iter().enumerate() {
-                                let tile_id = val.as_u64().unwrap_or(0);
-                                if tile_id != 0 && index < grid_len {
-                                    let x = index % config.width;
-                                    let y = index / config.width;
-                                    let pos_x = (x as f32 + 0.5) * config.tile_w * scale;
-                                    let pos_y = (y as f32 + 0.5) * config.tile_h * scale;
-                                    static_lights.push(lamp(
-                                        Vec2::new(pos_x, pos_y),
-                                        MAP_STATIC_LIGHT_RADIUS,
-                                        MAP_STATIC_LIGHT_COLOR,
-                                        MAP_STATIC_LIGHT_INTENSITY,
-                                        MAP_STATIC_LIGHT_FLICKER,
-                                    ));
-                                }
-                            }
-                        }
+        for layer in &tiled_map.layers {
+            let name = layer.name.as_str();
+            if name.eq_ignore_ascii_case("Lighting") || name.eq_ignore_ascii_case("Lights") {
+                for (index, &tile_id) in layer.data.iter().enumerate() {
+                    if tile_id != 0 && index < grid_len {
+                        let x = index % config.width;
+                        let y = index / config.width;
+                        let pos_x = (x as f32 + 0.5) * config.tile_w * scale;
+                        let pos_y = (y as f32 + 0.5) * config.tile_h * scale;
+                        static_lights.push(lamp(
+                            Vec2::new(pos_x, pos_y),
+                            MAP_STATIC_LIGHT_RADIUS,
+                            MAP_STATIC_LIGHT_COLOR,
+                            MAP_STATIC_LIGHT_INTENSITY,
+                            MAP_STATIC_LIGHT_FLICKER,
+                        ));
                     }
                 }
             }
@@ -380,14 +382,13 @@ impl TilemapManager {
 }
 
 pub struct WorldManager {
-    maps: [Option<TilemapManager>; 2],
+    maps: [TilemapManager; 2],
     pub current_map: MapId,
 }
 
 const CONFIGS: [MapConfig; 2] = [
     MapConfig {
         json_str: include_str!("../assets/maps/house.json"),
-        atlas_bytes: include_bytes!("../assets/maps/tileset.png"),
         texture_bytes: include_bytes!("../assets/maps/house.png"),
         width: 20,
         height: 20,
@@ -396,7 +397,6 @@ const CONFIGS: [MapConfig; 2] = [
     },
     MapConfig {
         json_str: include_str!("../assets/maps/level1_1.json"),
-        atlas_bytes: include_bytes!("../assets/maps/tileset.png"),
         texture_bytes: include_bytes!("../assets/maps/level1_1.png"),
         width: 60,
         height: 30,
@@ -407,30 +407,28 @@ const CONFIGS: [MapConfig; 2] = [
 
 impl WorldManager {
     pub fn init(scale: f32) -> Self {
-        let house_map = TilemapManager::load(&CONFIGS[0], scale);
-
+        // Обе карты грузятся на старте: переход между локациями не должен
+        // декодировать текстуру и разбирать JSON посреди игры.
         Self {
-            maps: [Some(house_map), None],
+            maps: [
+                TilemapManager::load(&CONFIGS[0], scale),
+                TilemapManager::load(&CONFIGS[1], scale),
+            ],
             current_map: MapId::House,
         }
     }
 
     pub fn switch_to(&mut self, map_id: MapId) {
-        let idx = map_id as usize;
-        if self.maps[idx].is_none() {
-            self.maps[idx] = Some(TilemapManager::load(&CONFIGS[idx], SCALE));
-        }
-
         self.current_map = map_id;
         self.get_active_mut().last_target_tile = (usize::MAX, usize::MAX);
     }
 
     pub fn get_active(&self) -> &TilemapManager {
-        self.maps[self.current_map as usize].as_ref().unwrap()
+        &self.maps[self.current_map as usize]
     }
 
     pub fn get_active_mut(&mut self) -> &mut TilemapManager {
-        self.maps[self.current_map as usize].as_mut().unwrap()
+        &mut self.maps[self.current_map as usize]
     }
 
     pub fn update_flow_field(&mut self, target_pos: Vec2) {

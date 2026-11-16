@@ -34,7 +34,8 @@ pub struct TripEffect {
     pub intensity: f32,
     target_intensity: f32,
     material: Material,
-    pub trail_target: RenderTarget,
+    // Создаётся лениво при первом включении эффекта: до этого текстура не нужна.
+    trail_target: Option<RenderTarget>,
     pub time: f32,
 }
 
@@ -55,18 +56,12 @@ impl TripEffect {
         )
         .unwrap();
 
-        let w = screen_width() as u32;
-        let h = screen_height() as u32;
-
-        let trail_target = render_target(w, h);
-        trail_target.texture.set_filter(FilterMode::Nearest);
-
         Self {
             active: false,
             intensity: 0.0,
             target_intensity: 0.0,
             material,
-            trail_target,
+            trail_target: None,
             time: 0.0,
         }
     }
@@ -74,6 +69,31 @@ impl TripEffect {
     pub fn toggle(&mut self, enable: bool) {
         self.active = enable;
         self.target_intensity = if enable { 1.0 } else { 0.0 };
+
+        // Аллоцируем полноэкранную текстуру заранее, при включении,
+        // а не посреди отрисовки кадра.
+        if enable {
+            self.ensure_trail_target();
+        }
+    }
+
+    fn ensure_trail_target(&mut self) {
+        let width = screen_width().max(1.0) as u32;
+        let height = screen_height().max(1.0) as u32;
+
+        let needs_recreate = match &self.trail_target {
+            Some(target) => {
+                target.texture.width() as u32 != width
+                    || target.texture.height() as u32 != height
+            }
+            None => true,
+        };
+
+        if needs_recreate {
+            let target = render_target(width, height);
+            target.texture.set_filter(FilterMode::Nearest);
+            self.trail_target = Some(target);
+        }
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -85,24 +105,21 @@ impl TripEffect {
         } else if self.intensity > self.target_intensity {
             self.intensity = (self.intensity - dt * speed).max(self.target_intensity);
         }
-
-        let w = screen_width() as u32;
-        let h = screen_height() as u32;
-        if self.trail_target.texture.width() as u32 != w
-            || self.trail_target.texture.height() as u32 != h
-        {
-            self.trail_target = render_target(w, h);
-            self.trail_target.texture.set_filter(FilterMode::Nearest);
-        }
     }
 
-    // input — исходное изображение (сцена или результат другого пост-эффекта).
-    // Вход всегда в "перевёрнутой" ориентации — сцена рендерится игровой камерой,
-    // а пост-эффекты её сохраняют, поэтому квад рисуется с flip_y: true
-    pub fn render_to_screen(&self, input: &Texture2D) {
+    // Накладывает trip-трейл поверх входного изображения.
+    // Если передан time_slow, его шейдер применяется сразу при накоплении трейла —
+    // без промежуточной полноэкранной текстуры.
+    pub fn render_to_screen(&mut self, input: &Texture2D, time_slow: Option<&TimeSlowEffect>) {
+        self.ensure_trail_target();
+
+        let Some(trail_target) = &self.trail_target else {
+            return;
+        };
+
         let mut trail_cam =
             Camera2D::from_display_rect(Rect::new(0.0, 0.0, screen_width(), screen_height()));
-        trail_cam.render_target = Some(self.trail_target.clone());
+        trail_cam.render_target = Some(trail_target.clone());
         set_camera(&trail_cam);
 
         let fade_alpha = 0.5 - (0.96 * self.intensity).clamp(0.0, 1.0);
@@ -115,17 +132,23 @@ impl TripEffect {
             Color::new(0.0, 0.0, 0.0, fade_alpha),
         );
 
-        draw_texture_ex(
-            input,
-            0.0,
-            0.0,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(vec2(screen_width(), screen_height())),
-                flip_y: true,
-                ..Default::default()
-            },
-        );
+        // Вход всегда в "перевёрнутой" ориентации — сцена рендерится игровой
+        // камерой, а пост-эффекты её сохраняют, поэтому квад рисуется с flip_y.
+        if let Some(time_slow) = time_slow {
+            time_slow.draw_to_target(input, true);
+        } else {
+            draw_texture_ex(
+                input,
+                0.0,
+                0.0,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(vec2(screen_width(), screen_height())),
+                    flip_y: true,
+                    ..Default::default()
+                },
+            );
+        }
 
         set_default_camera();
         self.material.set_uniform("u_time", self.time);
@@ -134,7 +157,7 @@ impl TripEffect {
         gl_use_material(&self.material);
 
         draw_texture_ex(
-            &self.trail_target.texture,
+            &trail_target.texture,
             0.0,
             0.0,
             WHITE,
@@ -156,7 +179,6 @@ pub struct TimeSlowEffect {
     active: bool,
     glitch_timer: f32,
     material: Material,
-    out_target: RenderTarget,
     time: f32,
 }
 
@@ -178,12 +200,6 @@ impl TimeSlowEffect {
         )
         .unwrap();
 
-        let w = screen_width() as u32;
-        let h = screen_height() as u32;
-
-        let out_target = render_target(w, h);
-        out_target.texture.set_filter(FilterMode::Nearest);
-
         Self {
             intensity: 0.0,
             glitch_strength: 0.0,
@@ -191,7 +207,6 @@ impl TimeSlowEffect {
             active: false,
             glitch_timer: 0.0,
             material,
-            out_target,
             time: 0.0,
         }
     }
@@ -224,15 +239,6 @@ impl TimeSlowEffect {
         } else {
             self.glitch_strength = 0.0;
         }
-
-        let w = screen_width() as u32;
-        let h = screen_height() as u32;
-        if self.out_target.texture.width() as u32 != w
-            || self.out_target.texture.height() as u32 != h
-        {
-            self.out_target = render_target(w, h);
-            self.out_target.texture.set_filter(FilterMode::Nearest);
-        }
     }
 
     // Эффект считается активным, пока виден хотя бы глитч-берст затухания
@@ -240,14 +246,9 @@ impl TimeSlowEffect {
         self.intensity > 0.001 || self.glitch_strength > 0.001
     }
 
-    // Пропускает изображение через шейдер замедления.
-    // Вход, как и у TripEffect, всегда в "перевёрнутой" ориентации
-    pub fn process(&self, input: &Texture2D) {
-        let mut out_cam =
-            Camera2D::from_display_rect(Rect::new(0.0, 0.0, screen_width(), screen_height()));
-        out_cam.render_target = Some(self.out_target.clone());
-        set_camera(&out_cam);
-
+    // Рисует вход через шейдер замедления в текущую камеру/цель.
+    // Камеру и render target выбирает вызывающая сторона.
+    pub fn draw_to_target(&self, input: &Texture2D, flip_y: bool) {
         self.material.set_uniform("u_time", self.time);
         self.material.set_uniform("u_intensity", self.intensity);
         self.material.set_uniform("u_glitch", self.glitch_strength);
@@ -261,16 +262,18 @@ impl TimeSlowEffect {
             WHITE,
             DrawTextureParams {
                 dest_size: Some(vec2(screen_width(), screen_height())),
-                flip_y: true,
+                flip_y,
                 ..Default::default()
             },
         );
 
         gl_use_default_material();
-        set_default_camera();
     }
 
-    pub fn out_texture(&self) -> Texture2D {
-        self.out_target.texture.clone()
+    // Если trip-эффект выключен, шейдер замедления применяется сразу на экран:
+    // промежуточный render target и лишний полноэкранный проход не нужны.
+    pub fn draw_to_screen(&self, input: &Texture2D) {
+        set_default_camera();
+        self.draw_to_target(input, false);
     }
 }

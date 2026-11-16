@@ -6,7 +6,30 @@ use macroquad::prelude::*;
 // текстура 48 px растянута до SPRITE_SIZE * SCALE = 105.6, то есть 2.2 на пиксель
 const CELL: f32 = 2.2;
 
-const BLOOD_COLOR: Color = Color::new(1.0, 0.0, 0.0, 1.0);
+// Время полного растекания лужи, сек. В этих единицах время появления клеток
+// упаковывается в красный канал текстуры, а возраст лужи — в цвет вершин.
+const AGE_SCALE: f32 = 2.2;
+
+const VERTEX_SHADER: &str = r#"#version 100
+attribute vec3 position;
+attribute vec2 texcoord;
+attribute vec4 color0;
+
+varying lowp vec2 uv;
+varying lowp vec4 color;
+
+uniform mat4 Model;
+uniform mat4 Projection;
+
+void main() {
+    gl_Position = Projection * Model * vec4(position, 1.0);
+    uv = texcoord;
+    // Macroquad передаёт цвет вершин сырыми байтами 0..255 (как и его внутренние шейдеры)
+    color = color0 / 255.0;
+}
+"#;
+
+const FRAGMENT_SHADER: &str = include_str!("../effects/blood.glsl");
 
 // Сгусток, из которого складывается форма лужи
 struct Lobe {
@@ -17,24 +40,18 @@ struct Lobe {
     spread: f32,
 }
 
-// Клетка лужи: квадратик, который появляется в момент appear
-struct Cell {
-    offset: Vec2,
-    appear: f32,
-}
-
-// Одна лужа
+// Одна лужа: заранее испечённая текстура формы и один квад
 pub struct BloodPool {
-    pos: Vec2,
     age: f32,
-    // Отсортированы по времени появления, поэтому видимые — это cells[..visible]
-    cells: Vec<Cell>,
-    visible: usize,
+    texture: Texture2D,
+    // Мировой левый верхний угол и сторона квада
+    quad_min: Vec2,
+    quad_size: f32,
 }
 
 impl BloodPool {
     pub fn new(pos: Vec2) -> Self {
-        let scale = rand::gen_range(0.85, 1.2);
+        let scale = rand::gen_range(1.2, 1.5);
 
         // Основной сгусток под телом появляется сразу, боковые — с задержкой
         let mut lobes = vec![Lobe {
@@ -92,53 +109,79 @@ impl BloodPool {
             }
         }
 
-        let half = CELL * 0.5;
-        let mut cells = Vec::new();
+        // Время появления клетки — в красный канал, маска формы — в альфу.
+        // Один раз при спавне, дальше лужа рисуется одним квадом без CPU-работы.
+        let mut image =
+            Image::gen_image_color(size as u16, size as u16, Color::new(0.0, 0.0, 0.0, 0.0));
         for iy in -radius_cells..=radius_cells {
             for ix in -radius_cells..=radius_cells {
                 let index = (iy + radius_cells) as usize * size + (ix + radius_cells) as usize;
                 let appear = appear_grid[index];
                 if appear.is_finite() {
-                    cells.push(Cell {
-                        offset: vec2(ix as f32 * CELL - half, iy as f32 * CELL - half),
-                        appear,
-                    });
+                    image.set_pixel(
+                        (ix + radius_cells) as u32,
+                        (iy + radius_cells) as u32,
+                        Color::new(appear / AGE_SCALE, 0.0, 0.0, 1.0),
+                    );
                 }
             }
         }
-        cells.sort_by(|a, b| a.appear.total_cmp(&b.appear));
+
+        let texture = Texture2D::from_image(&image);
+        texture.set_filter(FilterMode::Nearest);
+
+        let quad_size = size as f32 * CELL;
 
         Self {
-            pos,
             age: 0.0,
-            cells,
-            visible: 0,
+            texture,
+            quad_min: pos - vec2(quad_size * 0.5, quad_size * 0.5),
+            quad_size,
         }
     }
 
     pub fn update(&mut self, dt: f32) {
         self.age += dt;
-        while self.visible < self.cells.len() && self.cells[self.visible].appear <= self.age {
-            self.visible += 1;
-        }
     }
 
     pub fn draw(&self) {
-        for cell in &self.cells[..self.visible] {
-            let corner = self.pos + cell.offset;
-            draw_rectangle(corner.x, corner.y, CELL, CELL, BLOOD_COLOR);
-        }
+        // Возраст передаём через красный канал цвета вершин, чтобы не менять
+        // uniform материала посреди батча.
+        let age = (self.age / AGE_SCALE).min(1.0);
+        draw_texture_ex(
+            &self.texture,
+            self.quad_min.x,
+            self.quad_min.y,
+            Color::new(age, 0.0, 0.0, 1.0),
+            DrawTextureParams {
+                dest_size: Some(vec2(self.quad_size, self.quad_size)),
+                ..Default::default()
+            },
+        );
     }
 }
 
 // Все лужи текущей локации
 pub struct BloodManager {
     pools: Vec<BloodPool>,
+    material: Material,
 }
 
 impl BloodManager {
     pub fn new() -> Self {
-        Self { pools: Vec::new() }
+        let material = load_material(
+            ShaderSource::Glsl {
+                vertex: VERTEX_SHADER,
+                fragment: FRAGMENT_SHADER,
+            },
+            MaterialParams::default(),
+        )
+        .unwrap();
+
+        Self {
+            pools: Vec::new(),
+            material,
+        }
     }
 
     pub fn spawn(&mut self, pos: Vec2) {
@@ -152,9 +195,15 @@ impl BloodManager {
     }
 
     pub fn draw(&self) {
+        if self.pools.is_empty() {
+            return;
+        }
+
+        gl_use_material(&self.material);
         for pool in &self.pools {
             pool.draw();
         }
+        gl_use_default_material();
     }
 
     pub fn clear(&mut self) {

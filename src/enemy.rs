@@ -99,7 +99,7 @@ impl Enemy {
         dropped_weapons: &mut Vec<DroppedWeapon>,
         bullets: &mut Vec<Bullet>,
         dt: f32,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
     ) {
         if self.is_dead {
             return;
@@ -160,7 +160,7 @@ impl Enemy {
         &mut self,
         player: &Player,
         dropped_weapons: &mut Vec<DroppedWeapon>,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
     ) -> bool {
         let player_can_hit = player.is_attacking
             && is_in_attack_sector(player.pos, player.rotation, self.pos, ATTACK_RADIUS);
@@ -173,7 +173,7 @@ impl Enemy {
                         self.knock_timer = 4.0;
                         self.torso_anim.set_state(STUNNED_ROW, STUNNED_FRAMES, 1.0);
 
-                        if self.weapon != Weapon::Fists && self.weapon != Weapon::Dead {
+                        if self.weapon != Weapon::Fists {
                             dropped_weapons.push(DroppedWeapon::new(
                                 self.pos,
                                 self.weapon,
@@ -254,7 +254,7 @@ impl Enemy {
         sees_player: bool,
         player: &mut Player,
         dist_to_player: f32,
-        audio: &AudioManager,
+        audio: &mut AudioManager,
         dropped_weapons: &mut Vec<DroppedWeapon>,
         bullets: &mut Vec<Bullet>,
     ) {
