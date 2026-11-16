@@ -51,7 +51,7 @@ pub struct BloodPool {
 
 impl BloodPool {
     pub fn new(pos: Vec2) -> Self {
-        let scale = rand::gen_range(0.85, 1.2);
+        let scale = rand::gen_range(1.2, 1.5);
 
         // Основной сгусток под телом появляется сразу, боковые — с задержкой
         let mut lobes = vec![Lobe {
